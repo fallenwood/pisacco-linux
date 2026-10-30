@@ -28,9 +28,9 @@
     "selinux_fully_kernel_disabled": false,
     "latest_integrity_request": "out/lan-ssh-selinux-20261030T001611Z/integrity-request-authorized-key.json",
     "authorized_static_baseline_overrides": ["home/picasso/.ssh/authorized_keys"],
-    "installation_record": "POWER-PERSISTENT.md",
-    "previous_wifi_installation_record": "WIFI-INSTALL.md",
-    "original_xfs_installation_record": "INSTALL-XFS.md"
+    "installation_record": "notes/POWER-PERSISTENT.md",
+    "previous_wifi_installation_record": "notes/WIFI-INSTALL.md",
+    "original_xfs_installation_record": "notes/INSTALL-XFS.md"
   },
   "previous_android_rom": {
     "name": "crDroid",
@@ -184,7 +184,7 @@
   },
   "rootless_podman_session": {
     "status": "systemd_user_session_fixed_native_fresh_SSH_no_warnings",
-    "documentation": "PODMAN-USER-SESSION.md",
+    "documentation": "notes/PODMAN-USER-SESSION.md",
     "result_file": "out/podman-user-session-20261030T114234Z/result.json",
     "result_sha256": "606624443dfa42593ff2c29910b102d0e2ecac64193f4abdee1fc3a434a9552e",
     "installed_single_package": "systemd-pam-259.10-1.fc44.aarch64",
@@ -214,7 +214,7 @@
   },
   "wifi_cn_raw_fix": {
     "status": "CN_raw_evidence_fix_persisted_enabled_active_and_single_2g_connection_verified",
-    "documentation": "WIFI-CN-RAW-FIX.md",
+    "documentation": "notes/WIFI-CN-RAW-FIX.md",
     "result_file": "out/wifi-cn-raw-fix-20261030T090245Z/result.json",
     "result_sha256": "58012014147b5b930d95dc4d12647fd3e2d07c83c8ae1117a17a97e313d8c8b6",
     "user_request": "继续修复",
@@ -254,7 +254,7 @@
     "latest_state_superseded_by": "wifi_cn_raw_fix",
     "record_is_historical_diagnosis_stage_snapshot": true,
     "status": "definite_CN_text_evidence_bug_confirmed_iw617_does_not_render_INDOOR_ONLY_live_PHY_flag_unmeasured",
-    "documentation": "WIFI-CN-INDOOR-DIAGNOSIS.md",
+    "documentation": "notes/WIFI-CN-INDOOR-DIAGNOSIS.md",
     "result_file": "out/wifi-cn-indoor-diagnosis-20261030T084546Z/result.json",
     "result_sha256": "a7f5b923eddad5da804c62dee44196843e6fc922b9dcad568259d89bb2c291c2",
     "user_request": "继续排查",
@@ -301,7 +301,7 @@
   "wifi_country_cn": {
     "latest_state_superseded_by": "wifi_cn_retry",
     "status": "CN_configuration_persisted_global_CN_verified_but_CN_radio_start_rejected_by_PHY_indoor_audit",
-    "documentation": "WIFI-CN.md",
+    "documentation": "notes/WIFI-CN.md",
     "result_file": "out/wifi-cn-20261030T075148Z/result.json",
     "result_sha256": "7e664ffdc25c06d447334fdbf838e76ad8a4430d4f687176fce6662fc0a17bf9",
     "user_request": "从SG切换到CN",
@@ -359,7 +359,7 @@
     "latest_state_superseded_by": "wifi_country_cn",
     "status": "old_SG_radio_disabled_failed_regulatory_guard_cleanup_complete",
     "historical_idle_UP_snapshot_status": "persistent_real_wlan0_UP_unassociated_and_guarded_radio_service_enabled_active",
-    "documentation": "WIFI-RADIO-UP.md",
+    "documentation": "notes/WIFI-RADIO-UP.md",
     "result_file": "out/wifi-radio-up-20261030T054548Z/result.json",
     "result_sha256": "d17bdb398a79e5e209530be98b17364c71a49971f5bf437522eb3827c30027b1",
     "user_request": "不要关闭wlan 保持网卡一直在线",
@@ -471,7 +471,7 @@
     "default_mode_superseded_by": "wifi_radio_up",
     "latest_attended_attempt_separately_recorded_by": "wifi_attended_attempt",
     "status": "persistently_installed_three_natural_auto_recoveries_verified_currently_offline_budget_exhausted",
-    "documentation": "WIFI-RECONNECT.md",
+    "documentation": "notes/WIFI-RECONNECT.md",
     "result_file": "out/wifi-reconnect-20261030T003551Z/result.json",
     "result_sha256": "319f289779990dc140268a95fb21fb4a007a95017419bf8e84a64734be93abf6",
     "user_request": "开启掉线自动重连, 并且写入手机",
@@ -513,7 +513,7 @@
   "lan_ssh_selinux": {
     "wifi_recovery_state_superseded_by": "wifi_reconnect",
     "status": "LAN_SSH_configured_WIFI_OFFLINE_SELinux_config_disabled_kernel_still_permissive",
-    "documentation": "LAN-SSH.md",
+    "documentation": "notes/LAN-SSH.md",
     "result_file": "out/lan-ssh-selinux-20261030T001611Z/result.json",
     "result_sha256": "744fad9c3391cea406b8cabf5f8bb92c6c27dc9239e726c2305a35b73eadb13b",
     "user_request": "放行所有局域网ip, 关闭selinux, 使用./id_ed25519.pub",
@@ -544,7 +544,7 @@
     "latest_state_superseded_by": "wifi_reconnect",
     "enablement_result_is_historical_snapshot": true,
     "status": "enabled_but_now_failed_fallback_link_lost_safe_cleanup_complete",
-    "documentation": "WIFI-AUTO-ENABLED.md",
+    "documentation": "notes/WIFI-AUTO-ENABLED.md",
     "result_file": "out/wifi-enable-20261029T152332Z/result.json",
     "result_sha256": "1f3bee26ef3e3e9d64fd4fba301297a65dfad80ff52cdcd5297b55313f0df5c8",
     "user_request": "启用wifi自动连接",
@@ -586,7 +586,7 @@
   "power_install": {
     "historical_wifi_disabled_state_superseded_by": "wifi_auto_enable",
     "status": "boot_written_full_readback_and_integrity_passed_daemon_enabled_next_boot_activation_pending",
-    "documentation": "POWER-PERSISTENT.md",
+    "documentation": "notes/POWER-PERSISTENT.md",
     "result_file": "out/power-install-20261028/result.json",
     "result_sha256": "0a1c830cdd7aa105ad832f5228a1bffee9aa884fdfa0b73b2653069ad5350021",
     "user_reply": "接受",
@@ -623,7 +623,7 @@
   "pon_reason_read1": {
     "installation_gate_superseded_by_accepted_scope": "power_install",
     "status": "authorized_once_readonly_PON_sample_passed_CBL_power_and_PS_HOLD_latched_no_root_cause_claim",
-    "documentation": "POWER-PON-REASON.md",
+    "documentation": "notes/POWER-PON-REASON.md",
     "result_file": "out/pon-reason-read1-20261028/result.json",
     "result_sha256": "d3b2b9796e1252c6e65492a997806033eda9c96fc35ec12dcfce77da357530ed",
     "user_reply": "允许",
@@ -656,7 +656,7 @@
   "power_chain_audit": {
     "historical_stage_superseded_by": "pon_reason_read1",
     "status": "exact10_poweroff_chain_audited_fixed_readonly_PON_sampler_built_only_explicit_load_authorization_needed",
-    "documentation": "POWER-CHAIN-AUDIT.md",
+    "documentation": "notes/POWER-CHAIN-AUDIT.md",
     "result_file": "out/power-chain-audit-20261028/result.json",
     "result_sha256": "3b869de382e3696cdb8c948b5016c2f96eecf085da39851f3b20e755c3de1a08",
     "root_cause": "not_established",
@@ -677,7 +677,7 @@
   },
   "power_autostart": {
     "status": "user_confirmed_uncommanded_start_staying_off_and_manual_cold_start_failed_power_persistence_blocked",
-    "documentation": "POWER-AUTOSTART.md",
+    "documentation": "notes/POWER-AUTOSTART.md",
     "result_file": "out/power-autostart-20261028/result.json",
     "result_sha256": "a97b5e8fa2a6634b714a636fbbb0a2ccc95501cfc9734b1d52dfdbd55ce4fd1c",
     "user_reply": "自行启动的",
@@ -698,7 +698,7 @@
   "power_cycle_postboot": {
     "historical_stage_superseded_by": "power_autostart",
     "status": "orderly_poweroff_path_and_new_default_boot_integrity_passed_manual_cold_start_confirmation_pending",
-    "documentation": "POWER-CYCLE-POSTBOOT.md",
+    "documentation": "notes/POWER-CYCLE-POSTBOOT.md",
     "result_file": "out/power-cycle-postboot-20261028/result.json",
     "result_sha256": "51905c82a91eddef40ea5d5a75dac9179a0a73fdfd362792723b7af4fee16b1a",
     "old_boot_id": "279ae843-fcc4-4cfe-a49b-4ff754fd91ef",
@@ -718,7 +718,7 @@
   },
   "power_cycle_review": {
     "status": "guided2_real_hold_and_usb20s_window_passed_postpoweron_ssh_pending_missing_host_usb_ipv4",
-    "documentation": "POWER-CYCLE-REVIEW.md",
+    "documentation": "notes/POWER-CYCLE-REVIEW.md",
     "result_file": "out/power-cycle-review-20261028/result.json",
     "result_sha256": "afadb8df265b7ad363ce81c58ade6a31882a53bd40302e73e21644ce028e4831",
     "real_key116_release_duration_seconds": 2.361172,
@@ -733,7 +733,7 @@
   },
   "power_shutdown_guided2": {
     "status": "first_armed_timeout_no_request_preserved_separate_guided2_prepared_not_run",
-    "documentation": "POWER-SHUTDOWN-GUIDED2.md",
+    "documentation": "notes/POWER-SHUTDOWN-GUIDED2.md",
     "result_file": "out/power-shutdown-guided2-20261028/result.json",
     "result_sha256": "645d9351f636df61244f2be4f631883d89ab9c4bcf9d5285d4fc9516215f15db",
     "primary_native_status": "observer_timed_out_no_valid_long_release",
@@ -753,7 +753,7 @@
   },
   "power_key_observed": {
     "status": "passed_real_power_hold_release_observation_disarmed_orderly_shutdown_trial_prepared_not_run",
-    "documentation": "POWER-KEY-OBSERVED.md",
+    "documentation": "notes/POWER-KEY-OBSERVED.md",
     "result_file": "out/power-key-observed-20261028/result.json",
     "result_sha256": "957adeea3d8d8153ae6cc18a5c8f48bd64b34ce069e8a040d94f30ec8a8b786c",
     "real_key116_event1_observed": true,
@@ -777,7 +777,7 @@
   },
   "power_key_cooldown": {
     "status": "candidate_boot_real_power_input_registered_initial_preflight_refused_cooled_resume_prepared_observer_unconsumed",
-    "documentation": "POWER-KEY-COOLDOWN.md",
+    "documentation": "notes/POWER-KEY-COOLDOWN.md",
     "result_file": "out/power-key-cooldown-20261028/result.json",
     "result_sha256": "226ad0201566af416870600a6850fba0ecbffc4227d249fc3e1e1b0af1c51928",
     "candidate_ram_boot_completed": true,
@@ -819,7 +819,7 @@
   },
   "power_key_preparation": {
     "status": "implemented_disarmed_power_hold_policy_own_key_dtb_boot_trial_packed_not_booted",
-    "documentation": "POWER-KEY.md",
+    "documentation": "notes/POWER-KEY.md",
     "result_file": "out/power-key-preparation-20261028/result.json",
     "result_sha256": "142e627a9f48203dbab96f25991079475fbd69de046db6c157b1b288f77ecff3",
     "policy": "Power hold2..3s then RELEASE; standard orderly poweroff only when explicitly armed",
@@ -845,7 +845,7 @@
   },
   "display_console": {
     "status": "installed_native_tty1_console_no_synthetic_pixels_native_idle_passed_visual_feedback_pending",
-    "documentation": "DISPLAY-CONSOLE.md",
+    "documentation": "notes/DISPLAY-CONSOLE.md",
     "result_file": "out/display-console-20261028/result.json",
     "result_sha256": "b6003b5f451b410aeab785fe924a2483e87814c189035d350533c4241c71b850",
     "native_tty1_kd_text_fbcon_getty_verified": true,
@@ -861,7 +861,7 @@
   },
   "display_persistent": {
     "status": "passed_normal_reboot_persistent_screen_service_native_volume_up_and_15s_idle",
-    "documentation": "DISPLAY-PERSISTENT.md",
+    "documentation": "notes/DISPLAY-PERSISTENT.md",
     "result_file": "out/display-persistent-20261028/result.json",
     "result_sha256": "1b4354109cb8dc9a3b012789367a867491b3e99a4af3e881e4c47a05ea42147b",
     "user_explicitly_forbids_system_suspend": true,
@@ -900,7 +900,7 @@
   },
   "display_visual2_acceptance": {
     "status": "passed_user_observed_visible_color_bar_restore_after_real_volume_up_visual2",
-    "documentation": "DISPLAY-VISUAL2.md",
+    "documentation": "notes/DISPLAY-VISUAL2.md",
     "result_file": "out/display-visual2-acceptance-20261028/result.json",
     "result_sha256": "68219ae71fc55fc41f8910d14a60efcddf5946e7e40ac3b9c6146efe04e1124b",
     "user_confirmed_visible_color_bar_restore": true,
@@ -923,7 +923,7 @@
   },
   "display_visual2_preparation": {
     "status": "native_fbcon_unblank_pattern_overwrite_reproduced_visual2_redraw_fix_prepared_pending_physical_wake_acceptance",
-    "documentation": "DISPLAY-REDRAW.md",
+    "documentation": "notes/DISPLAY-REDRAW.md",
     "result_file": "out/display-visual2-20261028/result.json",
     "result_sha256": "a6a226235339fec99e5bb7e9c7b7cce984bda20d83e7af177be9739bbd806c58",
     "visual1_first_color_bars_and_physical_off_confirmed_by_user_A": true,
@@ -965,7 +965,7 @@
   },
   "display_handoff": {
     "status": "passed_native_bounded_wled_handoff_and_kernel_expiry_pending_user_visual_volume_up_trial",
-    "documentation": "DISPLAY-HANDOFF.md",
+    "documentation": "notes/DISPLAY-HANDOFF.md",
     "result_file": "out/display-handoff-20261028/result.json",
     "result_sha256": "9b3934afb00f291c7df6f673b045bc526246909b018db7a521e8ff3fa05a1269",
     "native_readonly_wled_snapshot_verified": true,
@@ -992,7 +992,7 @@
   },
   "display_preparation": {
     "status": "prepared_screen_policy_keys_dtb_and_isolated_kernel_native_display_backlight_not_enabled_or_accepted",
-    "documentation": "DISPLAY.md",
+    "documentation": "notes/DISPLAY.md",
     "result_file": "out/display-preparation-20261028/result.json",
     "result_sha256": "5d62f7641f3f8a53cdb43ff3a674e8ca84c26a10bea8cfa7546c83d9291b38da",
     "screen_only_not_system_suspend": true,
@@ -1025,7 +1025,7 @@
     "enablement_state_superseded_by": "wifi_auto_enable",
     "root_cause_conclusion_still_unresolved": true,
     "status": "diagnosed_firmware_beacon_miss_precedes_disable_key_timeout_lower_rx_cause_unresolved",
-    "documentation": "WIFI-LINK-LOSS.md",
+    "documentation": "notes/WIFI-LINK-LOSS.md",
     "result_file": "out/wifi-link-loss-20261028/result.json",
     "result_sha256": "59f9053a62ffb283b0a80ce56b0b1447e9704dd71f17c90e0e824e52e2196e09",
     "firmware_beacon_miss_event_and_host_path_verified": true,
@@ -1053,7 +1053,7 @@
   "wifi_autoconnect_trials": {
     "enablement_state_superseded_by": "wifi_auto_enable",
     "status": "blocked_default_on_due_reproducible_2g_link_loss_after_successful_fallback_and_https",
-    "documentation": "WIFI-AUTOCONNECT.md",
+    "documentation": "notes/WIFI-AUTOCONNECT.md",
     "result_file": "out/wifi-autoconnect-20261028/result.json",
     "result_sha256": "57ed06b04c5bc10abc046b0bde118e26e80a1320875cc8cc040f68c2d9894a96",
     "primary_ssid": "Chaldea",
@@ -1080,7 +1080,7 @@
   },
   "wifi_default_on_preparation": {
     "status": "passed_priority_fallback_policy_and_persistent_entry_preparation_pending_local_credentials_and_guarded_service",
-    "documentation": "WIFI-AUTOCONNECT.md",
+    "documentation": "notes/WIFI-AUTOCONNECT.md",
     "result_file": "out/wifi-autoconnect-preparation-20261028/result.json",
     "result_sha256": "dea2b3b88121a863c2a6e5463f353468d832089d3705547020f98cf1ca468537",
     "primary_ssid": "Chaldea",
@@ -1099,7 +1099,7 @@
   },
   "wifi_persistent_installation": {
     "status": "passed_persistent_wifi2_boot_full_readback_and_normal_reboot_with_radio_off",
-    "documentation": "WIFI-INSTALL.md",
+    "documentation": "notes/WIFI-INSTALL.md",
     "result_file": "out/wifi-install-20261028/result.json",
     "result_sha256": "0f3f35755eb16ed0dbbcda3122e939bdb550c6b452cf53ae5ad0793a8ef03a61",
     "kernel": "6.18.58-picasso-lts-wifi2 #10",
@@ -1128,7 +1128,7 @@
   },
   "wifi_hardware_test": {
     "status": "passed_temporary_wlan_registration_and_scan_pending_association",
-    "documentation": "WIFI-SCAN.md",
+    "documentation": "notes/WIFI-SCAN.md",
     "result_file": "out/wifi-rmtfs-20261027/result.json",
     "result_sha256": "1a56b38429bba7387d497f06e55eab57a840e946a4c1e3b97fed83f63334d333",
     "wlan0_registration_verified": true,
@@ -1147,7 +1147,7 @@
   },
   "wifi_connection_preparation": {
     "status": "passed_sg_device_default_mac_and_chaldea_scan_waiting_local_password",
-    "documentation": "WIFI-CONNECTION.md",
+    "documentation": "notes/WIFI-CONNECTION.md",
     "result_file": "out/wifi-sg-mac-20261027/result.json",
     "result_sha256": "22127d7f434d9062d003ad9ddb72845605bf03b04e875c68c731f7126ccc27db",
     "user_country": "SG",
@@ -1170,7 +1170,7 @@
   },
   "wifi_rmtfs_preparation": {
     "status": "wifi2_prepared_awaiting_temporary_boot",
-    "documentation": "WIFI-RMTFS.md",
+    "documentation": "notes/WIFI-RMTFS.md",
     "preparation_file": "out/wifi-rmtfs-20261027/preparation-status.json",
     "preparation_sha256": "107cb3e36505cd40a30d10bfaea6126ad3a51d8d84f72a50c9e86cff3e687180",
     "nv_read_authorized": ["modemst1", "modemst2", "fsg"],
@@ -1190,7 +1190,7 @@
   },
   "wifi_network_acceptance": {
     "status": "passed_bounded_native_wifi_wpa2_dhcp_sg_dns_https_then_disconnected",
-    "documentation": "WIFI-NETWORK.md",
+    "documentation": "notes/WIFI-NETWORK.md",
     "result_file": "out/wifi-network-acceptance-20261028/result.json",
     "result_sha256": "116ea738d18893f599da973a615368f60020ce6b0dcd3ca430c44546618acafb",
     "native_kernel": "6.18.58-picasso-lts-wifi2 #10 temporary",
@@ -1232,7 +1232,7 @@
   },
   "wifi_chaldea_2g_directed_discovery": {
     "status": "retry3_pre_activation_passive_scan_missed_target_directed_active_recovered_ready_dynamic_discovery_retry4",
-    "documentation": "WIFI-CHALDEA-2G-CONNECTION.md",
+    "documentation": "notes/WIFI-2G-CONNECTION.md",
     "result_file": "out/wifi-chaldea-2g-connect4-20261028/summary-result.json",
     "result_sha256": "7f1bd7ad5df0eed79c34bf3d7b6e4c36be2ce4e27c721e8ca83a933fdb2ca25f",
     "third_oneshot_ran_not_repeated_by_agent": true,
@@ -1265,7 +1265,7 @@
   },
   "wifi_chaldea_2g_validation": {
     "status": "partial_wpa2_dhcp_sg_cpu_cap_passed_probe_socket_incompatible_fixed_waiting_local_oneshot_retry",
-    "documentation": "WIFI-CHALDEA-2G-CONNECTION.md",
+    "documentation": "notes/WIFI-2G-CONNECTION.md",
     "result_file": "out/wifi-chaldea-2g-connect3-20261028/summary-result.json",
     "result_sha256": "04aadec78a62a8613d2c03e8ad362271b4982258231a049c20aa68dc74c7a87d",
     "ssid": "Chaldea-2.4G",
@@ -1294,7 +1294,7 @@
   },
   "wifi_chaldea_2g_connection": {
     "status": "partial_wpa2_ccmp_dhcp_pass_sg_intersection_cpu_cap_fix_validated_waiting_secret_retry",
-    "documentation": "WIFI-CHALDEA-2G-CONNECTION.md",
+    "documentation": "notes/WIFI-2G-CONNECTION.md",
     "result_file": "out/wifi-chaldea-2g-connect2-20261028/summary-result.json",
     "result_sha256": "967e172b58fa663afa70e54890f5882ccdd20bf5c5968126906638b5912e9307",
     "ssid": "Chaldea-2.4G",
@@ -1328,7 +1328,7 @@
   },
   "wifi_chaldea_2g_preparation": {
     "status": "passed_80211_open_auth_new_ssid_waiting_local_credential",
-    "documentation": "WIFI-CHALDEA-2G.md",
+    "documentation": "notes/WIFI-2G-PREPARATION.md",
     "result_file": "out/wifi-chaldea-2g-20261028/summary-result.json",
     "result_sha256": "fcff336195e660e5dc431b1bf2a17d75d71a32cb79240739ba317b24e82a3761",
     "ssid": "Chaldea-2.4G",
@@ -1360,7 +1360,7 @@
   },
   "wifi_stationary_weak_signal_diagnostics": {
     "status": "fixed_usb_auth_unresolved_status3_ps_off_ht20_no_fix_no_same_ssid_2g_seen",
-    "documentation": "WIFI-TX-DIAGNOSTICS.md",
+    "documentation": "notes/WIFI-TX-DIAGNOSTICS.md",
     "result_file": "out/wifi-24ghz-20261027/summary-result.json",
     "result_sha256": "1f3ada8c290fc988f914ccbdc1b26042180b0b14512676434d1b020c7b036d4f",
     "user_accepts_stationary_weak_signal": true,
@@ -1387,7 +1387,7 @@
   },
   "wifi_link_diagnostic": {
     "status": "ieee80211_open_auth_timeout_reproduced_without_password",
-    "documentation": "WIFI-CONNECTION-TEST.md",
+    "documentation": "notes/WIFI-CONNECTION-TEST.md",
     "result_file": "out/wifi-link-diag2-20261027/summary-result.json",
     "result_sha256": "88252f92a56f82d99f2a0b8c16cad34854d0013ea9b462987bd31cbd51e2f513",
     "ssid": "Chaldea",
@@ -1406,7 +1406,7 @@
   },
   "wifi_connection_test": {
     "status": "association_failed_ieee80211_auth_timeout_before_wpa2_handshake",
-    "documentation": "WIFI-CONNECTION-TEST.md",
+    "documentation": "notes/WIFI-CONNECTION-TEST.md",
     "result_file": "out/wifi-connect-20261027/summary-result.json",
     "result_sha256": "5547708b33a397f794f1a9c863732663b63add301c332cf030f0be34a34a9c47",
     "target": "Chaldea",
@@ -1428,7 +1428,7 @@
   "wifi_bringup": {
     "status": "partial_mpss_boot_passed_wifi_blocked_rmtfs_nv",
     "wifi_operational": false,
-    "documentation": "WIFI-BRINGUP.md",
+    "documentation": "notes/WIFI-BRINGUP.md",
     "result_file": "out/wifi-bringup-20261027/result.json",
     "result_sha256": "d9ee08f8c2dbb7d229c3aef8091922de64e678616a3c58e6c79f313e0c74f569",
     "temporary_boot_image_sha256": "e3bf5f6188e63bbc860983ca7155e2b58e62dd4e99eda4b60210353b329d2289",
