@@ -1,0 +1,33 @@
+# PREPARATION ONLY: render exact audited paths/devices, never enable as shipped.
+# Runtime requires a genuine backlight and all three physical key devices.
+[Unit]
+Description=Picasso bounded screen-only idle/key trial
+ConditionPathExists=/sys/class/graphics/fb0/blank
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -I /opt/picasso-screen/screen-idle.py --idle-seconds 60 --brightness 64 --runtime-seconds 120
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-screen/screen-idle.py --off
+RuntimeMaxSec=135s
+TimeoutStartSec=15s
+TimeoutStopSec=10s
+WatchdogSec=8s
+Restart=no
+UMask=0077
+RuntimeDirectory=picasso-screen
+RuntimeDirectoryMode=0700
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ReadWritePaths=@BACKLIGHT@/brightness @FRAMEBUFFER@/blank
+InaccessiblePaths=/var/lib/picasso-wifi /var/lib/picasso-wifi-nv /etc/NetworkManager/system-connections
+DevicePolicy=closed
+@EXACT_INPUT_DEVICE_ALLOW@
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=64M
+StandardOutput=journal
+StandardError=journal

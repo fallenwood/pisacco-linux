@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* Temporary power-key trial. Keep the exact wifi2 memory/display/USB baseline.
+ * Only add this device's PM8150 primary PON KEY_POWER. No RESIN/volume-down,
+ * no S1/S2/S3 reset timers, reboot-mode magic, native display or rail changes.
+ */
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "sm7250-xiaomi-picasso-wifi-rmtfs.dts"
+
+&spmi_bus {
+	pmic@0 {
+		compatible = "qcom,pm8150", "qcom,spmi-pmic";
+		reg = <0 0>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pon@800 {
+			compatible = "qcom,pm8998-pon";
+			reg = <0x800>;
+
+			pwrkey {
+				compatible = "qcom,pm8941-pwrkey";
+				interrupts = <0 8 0 IRQ_TYPE_EDGE_BOTH>;
+				debounce = <15625>;
+				bias-pull-up;
+				linux,code = <KEY_POWER>;
+				/* Screen-only: do not infer system-suspend support. */
+			};
+		};
+	};
+};

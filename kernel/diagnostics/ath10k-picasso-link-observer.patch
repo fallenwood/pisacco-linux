@@ -1,0 +1,186 @@
+--- a/drivers/net/wireless/ath/ath10k/mac.c
++++ b/drivers/net/wireless/ath/ath10k/mac.c
+@@ -28,6 +28,22 @@
+ #include "wmi-ops.h"
+ #include "wow.h"
+ #include "leds.h"
++
++/* Observation only. No key bytes, peer addresses, frames, or state changes. */
++static bool picasso_link_observe;
++module_param(picasso_link_observe, bool, 0444);
++MODULE_PARM_DESC(picasso_link_observe,
++		"Picasso SNOC link-loss metadata only; no behavior changes");
++static atomic_t picasso_observed_beacons = ATOMIC_INIT(0);
++static atomic_t picasso_pre_filter_beacons = ATOMIC_INIT(0);
++static atomic_t picasso_pre_filter_errors = ATOMIC_INIT(0);
++static unsigned long picasso_last_beacon;
++bool ath10k_picasso_link_observing(struct ath10k *ar);
++bool ath10k_picasso_link_observing(struct ath10k *ar)
++{
++	return picasso_link_observe && ar->hif.bus == ATH10K_BUS_SNOC &&
++		of_machine_is_compatible("xiaomi,picasso");
++}
+ 
+ /* Attended conservative bandwidth trial, no firmware/calibration changes. */
+ static bool picasso_ht20_only;
+@@ -326,11 +342,21 @@
+ 	if (arvif->nohwcrypt)
+ 		return 1;
+ 
++	if (ath10k_picasso_link_observing(ar))
++		ath10k_info(ar, "Picasso link observation: key_begin cmd %u vdev %u flags %u\n",
++			    cmd, arvif->vdev_id, flags);
+ 	ret = ath10k_send_key(arvif, key, cmd, macaddr, flags);
+-	if (ret)
++	if (ret) {
++		if (ath10k_picasso_link_observing(ar))
++			ath10k_info(ar, "Picasso link observation: key_send_failed cmd %u ret %d\n",
++				    cmd, ret);
+ 		return ret;
++	}
+ 
+ 	time_left = wait_for_completion_timeout(&ar->install_key_done, 3 * HZ);
++	if (ath10k_picasso_link_observing(ar))
++		ath10k_info(ar, "Picasso link observation: key_wait_done cmd %u completed %u\n",
++			    cmd, !!time_left);
+ 	if (time_left == 0)
+ 		return -ETIMEDOUT;
+ 
+@@ -2111,6 +2137,17 @@
+ 	if (!ether_addr_equal(mgmt->bssid, vif->bss_conf.bssid))
+ 		return;
+ 
++	if (ath10k_picasso_link_observing(arvif->ar)) {
++		int count = atomic_inc_return(&picasso_observed_beacons);
++
++		WRITE_ONCE(picasso_last_beacon, jiffies);
++		if (count <= 4 || !(count % 64) ||
++		    delayed_work_pending(&arvif->connection_loss_work))
++			ath10k_info(arvif->ar,
++				    "Picasso link observation: own_beacon count %d vdev %u loss_pending %u\n",
++				    count, arvif->vdev_id,
++				    delayed_work_pending(&arvif->connection_loss_work));
++	}
+ 	cancel_delayed_work(&arvif->connection_loss_work);
+ }
+ 
+@@ -2122,6 +2159,50 @@
+ 						   skb);
+ }
+ 
++struct picasso_mgmt_observation {
++	struct sk_buff *skb;
++	u32 status;
++	u32 channel;
++};
++
++static void picasso_mgmt_observe_iter(void *data, u8 *mac,
++				      struct ieee80211_vif *vif)
++{
++	struct picasso_mgmt_observation *sample = data;
++	struct ieee80211_mgmt *mgmt = (void *)sample->skb->data;
++	struct ath10k_vif *arvif = (void *)vif->drv_priv;
++	int count, errors;
++
++	if (vif->type != NL80211_IFTYPE_STATION ||
++	    !ether_addr_equal(mgmt->bssid, vif->bss_conf.bssid))
++		return;
++	count = atomic_inc_return(&picasso_pre_filter_beacons);
++	if (sample->status & (WMI_RX_STATUS_ERR_DECRYPT |
++	    WMI_RX_STATUS_ERR_KEY_CACHE_MISS | WMI_RX_STATUS_ERR_CRC))
++		atomic_inc(&picasso_pre_filter_errors);
++	errors = atomic_read(&picasso_pre_filter_errors);
++	if (count <= 4 || !(count % 64) || (errors && errors <= 4))
++		ath10k_info(arvif->ar,
++			    "Picasso link observation: pre_filter_beacon count %d errors %d status %u channel %u\n",
++			    count, errors, sample->status, sample->channel);
++}
++
++void ath10k_picasso_mgmt_observe(struct ath10k *ar, struct sk_buff *skb,
++			       u32 status, u32 channel);
++void ath10k_picasso_mgmt_observe(struct ath10k *ar, struct sk_buff *skb,
++			       u32 status, u32 channel)
++{
++	struct picasso_mgmt_observation sample = { skb, status, channel };
++	struct ieee80211_hdr *hdr = (void *)skb->data;
++
++	if (!ath10k_picasso_link_observing(ar) || skb->len < 24 ||
++	    !ieee80211_is_beacon(hdr->frame_control))
++		return;
++	ieee80211_iterate_active_interfaces_atomic(ar->hw,
++					   ATH10K_ITER_NORMAL_FLAGS,
++					   picasso_mgmt_observe_iter, &sample);
++}
++
+ static void ath10k_mac_handle_beacon_miss_iter(void *data, u8 *mac,
+ 					       struct ieee80211_vif *vif)
+ {
+@@ -2136,6 +2217,14 @@
+ 	if (!arvif->is_up)
+ 		return;
+ 
++	if (ath10k_picasso_link_observing(ar))
++		ath10k_info(ar,
++			    "Picasso link observation: beacon_miss vdev %u own_beacons %d scan_state %u beacon_age_ms %u pre_filter %d errors %d\n",
++			    arvif->vdev_id, atomic_read(&picasso_observed_beacons),
++			    ar->scan.state,
++			    jiffies_to_msecs(jiffies - READ_ONCE(picasso_last_beacon)),
++			    atomic_read(&picasso_pre_filter_beacons),
++			    atomic_read(&picasso_pre_filter_errors));
+ 	ieee80211_beacon_loss(vif);
+ 
+ 	/* Firmware doesn't report beacon loss events repeatedly. If AP probe
+@@ -2161,6 +2250,11 @@
+ 						connection_loss_work.work);
+ 	struct ieee80211_vif *vif = arvif->vif;
+ 
++	if (ath10k_picasso_link_observing(arvif->ar))
++		ath10k_info(arvif->ar,
++			    "Picasso link observation: loss_work vdev %u is_up %u own_beacons %d\n",
++			    arvif->vdev_id, arvif->is_up,
++			    atomic_read(&picasso_observed_beacons));
+ 	if (!arvif->is_up)
+ 		return;
+ 
+--- a/drivers/net/wireless/ath/ath10k/wmi.c
++++ b/drivers/net/wireless/ath/ath10k/wmi.c
+@@ -33,6 +33,10 @@
+ module_param(picasso_mgmt_status, bool, 0444);
+ MODULE_PARM_DESC(picasso_mgmt_status,
+ 		"Picasso SNOC auth/assoc completion status only; no payload or MAC");
++
++bool ath10k_picasso_link_observing(struct ath10k *ar);
++void ath10k_picasso_mgmt_observe(struct ath10k *ar, struct sk_buff *skb,
++			       u32 status, u32 channel);
+ 
+ /* MAIN WMI cmd track */
+ static struct wmi_cmd_map wmi_cmd_map = {
+@@ -2244,6 +2248,10 @@
+ 	scan_id = __le32_to_cpu(arg.scan_id);
+ 	vdev_id = __le32_to_cpu(arg.vdev_id);
+ 
++	if (ath10k_picasso_link_observing(ar))
++		ath10k_info(ar,
++			    "Picasso link observation: scan type %u reason %u freq %u id %u vdev %u\n",
++			    event_type, reason, freq, scan_id, vdev_id);
+ 	spin_lock_bh(&ar->data_lock);
+ 
+ 	ath10k_dbg(ar, ATH10K_DBG_WMI,
+@@ -2572,6 +2580,7 @@
+ 	phy_mode = __le32_to_cpu(arg.phy_mode);
+ 	rate = __le32_to_cpu(arg.rate);
+ 
++	ath10k_picasso_mgmt_observe(ar, skb, rx_status, channel);
+ 	memset(status, 0, sizeof(*status));
+ 
+ 	ath10k_dbg(ar, ATH10K_DBG_MGMT,
+@@ -4594,6 +4603,9 @@
+ 	rssi = __le32_to_cpu(arg.rssi);
+ 	rssi += WMI_SPECTRAL_NOISE_FLOOR_REF_DEFAULT;
+ 
++	if (ath10k_picasso_link_observing(ar))
++		ath10k_info(ar, "Picasso link observation: roam vdev %u reason %u\n",
++			    vdev_id, reason);
+ 	ath10k_dbg(ar, ATH10K_DBG_WMI,
+ 		   "wmi roam event vdev %u reason 0x%08x rssi %d\n",
+ 		   vdev_id, reason, rssi);

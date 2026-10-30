@@ -1,87 +1,90 @@
-#!/bin/bash
-# Configure and build the kernel for a milestone (its initramfs is built in).
-#   tools/build-kernel.sh m1
-#   EXTRA_CONFIG=path/to/debug.config tools/build-kernel.sh m6   (extra fragment, e.g. lockdep)
-# Source tree: src/linux-*/ (newest), build tree: out/kbuild, result: out/Image-STAGE, the modules in
-# out/modules-STAGE and out/build-STAGE.info (source commit, uncommitted changes, config hash).
-#
-# The source is a git tree made by tools/mk-kernel-tree.sh: upstream tarball, then one commit per
-# kernel/patches/*.patch on the branch `sunstone`, debug work on branches above it. Nothing is
-# patched here; the build only checks that `sunstone` is part of what is checked out. A plain
-# tarball tree (no .git) still gets the patches applied, as before.
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
 set -euo pipefail
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-STAGE=${1:?usage: build-kernel.sh STAGE}
-SRC=$(ls -d "$ROOT"/src/linux-*/ | sort -V | tail -1); SRC=${SRC%/}
-KB=$ROOT/out/kbuild
-M="make -C $SRC O=$KB ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)"
+ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
+SRC=$ROOT/src/linux-6.18.58
+OUT=$ROOT/out
+KB=$OUT/kbuild
+[[ -f $SRC/Makefile ]] || { echo 'Run tools/prepare-kernel.py first' >&2; exit 1; }
+[[ -x $ROOT/downloads/busybox ]] || { echo 'Run tools/fetch-sources.py first' >&2; exit 1; }
+for tool in clang ld.lld llvm-ar llvm-objcopy make flex bison bc python3; do
+    command -v "$tool" >/dev/null || { echo "Missing tool: $tool" >&2; exit 1; }
+done
 mkdir -p "$KB"
-
-if [ -d "$SRC/.git" ]; then
-	git -C "$SRC" merge-base --is-ancestor sunstone HEAD ||
-		{ echo "$SRC: branch sunstone is not in HEAD's history" >&2; exit 1; }
-	# kernel/patches and the sunstone branch must carry the same changes, in the same order:
-	# compare git patch-ids (content, not just subjects)
-	BASE=$(git -C "$SRC" describe --tags --match 'v*-tarball' --abbrev=0 sunstone)
-	mapfile -t commits < <(git -C "$SRC" rev-list --reverse "$BASE..sunstone")
-	patches=("$ROOT"/kernel/patches/[0-9][0-9][0-9][0-9]-*.patch)
-	[ -e "${patches[0]}" ] || patches=()
-	[ ${#commits[@]} -eq ${#patches[@]} ] ||
-		{ echo "sunstone has ${#commits[@]} commits, kernel/patches ${#patches[@]} files" >&2; exit 1; }
-	for i in "${!patches[@]}"; do
-		a=$(git -C "$SRC" patch-id --stable < "${patches[$i]}" | cut -d' ' -f1)
-		b=$(git -C "$SRC" show "${commits[$i]}" | git -C "$SRC" patch-id --stable | cut -d' ' -f1)
-		[ -n "$a" ] && [ "$a" = "$b" ] || { echo "$(basename "${patches[$i]}") differs from sunstone commit" \
-			"$(git -C "$SRC" log -1 --format='%h %s' "${commits[$i]}") (export or rebuild the tree)" >&2; exit 1; }
-	done
-else
-	# local patches (kernel/patches/*.patch), each applied once
-	for p in "$ROOT"/kernel/patches/*.patch; do
-		[ -e "$p" ] || continue
-		if ! patch -d "$SRC" -p1 -R -s -f --dry-run < "$p" >/dev/null 2>&1; then
-			patch -d "$SRC" -p1 -N -s < "$p"
-			echo "applied $(basename "$p")"
-		fi
-	done
+# gen_init_cpio makes device nodes without root or a host-architecture executable.
+python3 - "$ROOT" <<'PY'
+import pathlib, struct, sys
+root = pathlib.Path(sys.argv[1])
+bb = root / 'downloads/busybox'
+hdr = bb.read_bytes()[:64]
+if hdr[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', hdr, 18)[0] != 183:
+    sys.exit('busybox must be an AArch64 ELF64 executable')
+lines = [f'dir /{d} 0755 0 0' for d in ('bin','sbin','dev','proc','sys','run','tmp','etc','usr','usr/bin','usr/sbin','newroot')]
+lines += [f'file /bin/busybox {bb} 0755 0 0', f'file /init {root}/initramfs/init 0755 0 0',
+          'nod /dev/console 0600 0 0 c 5 1', 'nod /dev/null 0666 0 0 c 1 3']
+(root / 'out/initramfs.list').write_text('\n'.join(lines) + '\n')
+PY
+M=(make -C "$SRC" O="$KB" ARCH=arm64 LLVM=1 LOCALVERSION=)
+"${M[@]}" defconfig >/dev/null
+# Drop non-Qualcomm platforms, independently of defconfig's current platform list.
+while IFS= read -r symbol; do
+    [[ $symbol = ARCH_QCOM ]] || "$SRC/scripts/config" --file "$KB/.config" -d "$symbol"
+done < <(grep -o '^config ARCH_[A-Z0-9_]*' "$SRC/arch/arm64/Kconfig.platforms" | cut -d' ' -f2)
+EXTRA=()
+if [[ ${DTS_PROFILE:-server} = wifi || ${DTS_PROFILE:-server} = wifi-rmtfs ]]; then
+    EXTRA+=("$ROOT/kernel/picasso-wifi.config")
+    DEFAULT_WIFI_VERSION=-picasso-lts-wifi1
+    if [[ ${DTS_PROFILE:-server} = wifi-rmtfs ]]; then
+        EXTRA+=("$ROOT/kernel/picasso-wifi-rmtfs.config")
+        DEFAULT_WIFI_VERSION=-picasso-lts-wifi2
+    fi
+    # Never collide with modules of the installed, known-bootable server kernel.
+    KERNEL_LOCALVERSION=${KERNEL_LOCALVERSION:-$DEFAULT_WIFI_VERSION}
+    [[ $KERNEL_LOCALVERSION =~ ^-picasso-lts-wifi[0-9]+$ ]] || { echo 'Wi-Fi trial requires a distinct -picasso-lts-wifiN release' >&2; exit 1; }
 fi
-
-# initramfs list with absolute paths (@ROOT@ = this checkout)
-sed -e "s|@ROOT@|$ROOT|g" "$ROOT/initramfs/$STAGE.list" > "$ROOT/out/initramfs-$STAGE.list"
-grep -o "$ROOT/[^ ]*" "$ROOT/out/initramfs-$STAGE.list" | while read -r f; do
-	[ -e "$f" ] || { echo "initramfs input missing: $f" >&2; exit 1; }
+ARCH=arm64 "$SRC/scripts/kconfig/merge_config.sh" -m -O "$KB" "$KB/.config" \
+    "$ROOT/kernel/picasso.config" "$ROOT/kernel/fedora-server.config" "${EXTRA[@]}" > "$OUT/config-merge.log"
+if [[ -n ${KERNEL_LOCALVERSION:-} ]]; then
+    "$SRC/scripts/config" --file "$KB/.config" --set-str LOCALVERSION "$KERNEL_LOCALVERSION"
+fi
+"$SRC/scripts/config" --file "$KB/.config" --set-str INITRAMFS_SOURCE "$OUT/initramfs.list"
+if [[ -n ${ROOT_PARTUUID:-} ]]; then
+    [[ $ROOT_PARTUUID =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo 'Invalid ROOT_PARTUUID' >&2; exit 1; }
+    CMDLINE=$(python3 - "$ROOT/kernel/picasso.config" <<'PY'
+import sys
+for line in open(sys.argv[1]):
+    if line.startswith('CONFIG_CMDLINE='): print(line.split('=',1)[1].strip().strip('"'))
+PY
+)
+    ROOT_FSTYPE=${ROOT_FSTYPE:-ext4}
+    [[ $ROOT_FSTYPE = ext4 || $ROOT_FSTYPE = xfs ]] || { echo 'ROOT_FSTYPE must be ext4 or xfs' >&2; exit 1; }
+    "$SRC/scripts/config" --file "$KB/.config" --set-str CMDLINE "$CMDLINE root=PARTUUID=$ROOT_PARTUUID rootfstype=$ROOT_FSTYPE"
+fi
+"${M[@]}" olddefconfig >/dev/null
+for symbol in SM_GCC_7250 PINCTRL_SM7250 INTERCONNECT_QCOM_SM7250 QCOM_CLK_RPMH QCOM_SMEM \
+    QCOM_PDC QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE REGULATOR_QCOM_RPMH \
+    SCSI_UFS_QCOM PHY_QCOM_QMP_UFS USB_DWC3_QCOM PHY_QCOM_USB_SNPS_FEMTO_V2 \
+    USB_CONFIGFS_NCM USB_CONFIGFS_ACM EXT4_FS XFS_FS XFS_POSIX_ACL XFS_QUOTA SECURITY_SELINUX DEVTMPFS \
+    NF_TABLES NF_TABLES_INET NFT_CT NFT_FIB_INET NFT_REJECT_INET \
+    ZRAM ZRAM_BACKEND_ZSTD ZRAM_DEF_COMP_ZSTD; do
+    grep -qx "CONFIG_$symbol=y" "$KB/.config" || { echo "CONFIG_$symbol was lost to dependencies" >&2; exit 1; }
 done
-
-# the .config is made from scratch every time, so options of an earlier EXTRA_CONFIG build do not stay
-$M defconfig >/dev/null
-"$SRC/scripts/kconfig/merge_config.sh" -m -O "$KB" "$KB/.config" "$ROOT/kernel/platforms-off.config" "$ROOT/kernel/sunstone.config" ${EXTRA_CONFIG:-} >/dev/null
-"$SRC/scripts/config" --file "$KB/.config" --set-str INITRAMFS_SOURCE "$ROOT/out/initramfs-$STAGE.list"
-"$SRC/scripts/config" --file "$KB/.config" --set-str EXTRA_FIRMWARE_DIR "$ROOT/downloads/firmware"
-$M olddefconfig >/dev/null
-for o in DRM_SIMPLEDRM FRAMEBUFFER_CONSOLE PSTORE_RAM PSTORE_CONSOLE DEVTMPFS USB_CONFIGFS_NCM PHY_QCOM_USB_SNPS_FEMTO_V2 QCOM_Q6V5_PAS ATH10K_SNOC \
-	SECURITY_APPARMOR OVERLAY_FS PSI BPF_LSM DEBUG_INFO_BTF; do
-	grep -q "^CONFIG_$o=y" "$KB/.config" || { echo "CONFIG_$o did not end up =y" >&2; exit 1; }
-done
-$M Image
-cp "$KB/arch/arm64/boot/Image" "$ROOT/out/Image-$STAGE"
-# the modules (defconfig's and the server ones), stripped, with modules.builtin so that modprobe also
-# knows what is built in: out/modules-STAGE/lib/modules/RELEASE, copied by tools/push-modules.sh
-$M modules
-rm -rf "$ROOT/out/modules-$STAGE"
-$M INSTALL_MOD_PATH="$ROOT/out/modules-$STAGE" INSTALL_MOD_STRIP=1 modules_install >/dev/null
-REL=$(cat "$KB/include/config/kernel.release")
-
-{
-	echo "stage: $STAGE"
-	echo "date: $(date -Is)"
-	if [ -d "$SRC/.git" ]; then
-		echo "source: $(git -C "$SRC" rev-parse --abbrev-ref HEAD) $(git -C "$SRC" rev-parse --short=12 HEAD)"
-		echo "uncommitted: $(git -C "$SRC" diff HEAD | sha256sum | cut -c1-16) ($(git -C "$SRC" diff HEAD --stat | tail -1))"
-		echo "untracked: $(git -C "$SRC" status --porcelain --untracked-files=all | grep -c '^??' || true) files"
-	fi
-	echo "extra config: ${EXTRA_CONFIG:-none}"
-	echo "config: $(grep -v '^#' "$KB/.config" | grep -v '^CONFIG_INITRAMFS_SOURCE=' | sort | sha256sum | cut -c1-16)"
-	echo "Image: $(sha256sum "$ROOT/out/Image-$STAGE" | cut -c1-16)"
-	echo "modules: $REL, $(find "$ROOT/out/modules-$STAGE" -name '*.ko*' | wc -l) files"
-} > "$ROOT/out/build-$STAGE.info"
-cat "$ROOT/out/build-$STAGE.info"
-ls -l "$ROOT/out/Image-$STAGE"
+grep -qx '# CONFIG_ZRAM_WRITEBACK is not set' "$KB/.config" || { echo 'ZRAM writeback must stay disabled' >&2; exit 1; }
+if [[ ${DTS_PROFILE:-server} = wifi || ${DTS_PROFILE:-server} = wifi-rmtfs ]]; then
+    WIFI_DEPS=(ATH10K_SNOC QCOM_Q6V5_PAS QCOM_PD_MAPPER QRTR QRTR_SMD RPMSG_QCOM_GLINK_SMEM)
+    [[ ${DTS_PROFILE:-server} != wifi-rmtfs ]] || WIFI_DEPS+=(QCOM_RMTFS_MEM)
+    for symbol in "${WIFI_DEPS[@]}"; do
+        grep -qx "CONFIG_$symbol=m" "$KB/.config" || { echo "Wi-Fi dependency CONFIG_$symbol=m lost" >&2; exit 1; }
+    done
+fi
+"${M[@]}" -j"${JOBS:-$(nproc)}" Image modules
+# Explicit DT profile; PM telemetry stays opt-in, never enables charging.
+bash "$ROOT/tools/build-dtb.sh" "${DTS_PROFILE:-server}"
+cp "$KB/arch/arm64/boot/Image" "$OUT/Image"
+# Only remove this script's generated module staging tree, never a system path.
+rm -rf -- "$OUT/modules"
+"${M[@]}" INSTALL_MOD_PATH="$OUT/modules" INSTALL_MOD_STRIP=1 modules_install > "$OUT/modules-install.log"
+find "$OUT/modules" -type l \( -name build -o -name source \) -delete
+cp "$KB/.config" "$OUT/kernel.config"
+sha256sum "$OUT/Image" "$OUT/picasso.dtb" "$OUT/kernel.config" > "$OUT/SHA256SUMS"
+echo 'Built Image, picasso.dtb and modules. NOT hardware tested; no boot image or flash performed.'

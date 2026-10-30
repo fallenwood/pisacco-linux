@@ -1,0 +1,54 @@
+--- a/drivers/net/wireless/ath/ath10k/qmi.c
++++ b/drivers/net/wireless/ath/ath10k/qmi.c
+@@ -17,6 +17,7 @@
+ #include <linux/firmware/qcom/qcom_scm.h>
+ #include <linux/soc/qcom/smem.h>
+ #include <linux/string.h>
++#include <linux/sizes.h>
+ #include <net/sock.h>
+ 
+ #include "debug.h"
+@@ -28,6 +29,15 @@
+ #define SMEM_IMAGE_TABLE_CNSS_INDEX     13
+ #define SMEM_IMAGE_VERSION_ENTRY_SIZE	128
+ #define SMEM_IMAGE_VERSION_NAME_SIZE	75
++
++/* Attended Picasso bring-up only. Vendor ICNSS uses its fixed MSA and sends
++ * MSA_READY without SCM reassignment (MiCode picasso-q-oss, 236f9eb09262).
++ * Keep the default unchanged; never apply this to another board or region.
++ */
++static bool picasso_fixed_msa;
++module_param_named(picasso_fixed_msa, picasso_fixed_msa, bool, 0400);
++MODULE_PARM_DESC(picasso_fixed_msa,
++	"Opt-in Picasso 0x8ba00000/2MiB firmware-owned MSA (no permission changes)");
+ 
+ static int ath10k_qmi_map_msa_permission(struct ath10k_qmi *qmi,
+ 					 struct ath10k_msa_mem_info *mem_info)
+@@ -1075,6 +1085,13 @@
+ 	struct ath10k_qmi *qmi;
+ 	int ret;
+ 
++	if (picasso_fixed_msa &&
++	    (!of_machine_is_compatible("xiaomi,picasso") ||
++	     ar->msa.paddr != 0x8ba00000 || ar->msa.mem_size != SZ_2M)) {
++		ath10k_err(ar, "fixed MSA trial denied: board/address/size mismatch\n");
++		return -EINVAL;
++	}
++
+ 	qmi = kzalloc(sizeof(*qmi), GFP_KERNEL);
+ 	if (!qmi)
+ 		return -ENOMEM;
+@@ -1082,8 +1099,12 @@
+ 	qmi->ar = ar;
+ 	ar_snoc->qmi = qmi;
+ 
+-	if (of_property_read_bool(dev->of_node, "qcom,msa-fixed-perm"))
++	if (of_property_read_bool(dev->of_node, "qcom,msa-fixed-perm") ||
++	    picasso_fixed_msa)
+ 		qmi->msa_fixed_perm = true;
++
++	if (picasso_fixed_msa)
++		ath10k_info(ar, "Picasso fixed MSA trial: retain firmware ownership of 0x8ba00000/2MiB\n");
+ 
+ 	if (of_property_read_bool(dev->of_node, "qcom,no-msa-ready-indicator"))
+ 		qmi->no_msa_ready_indicator = true;

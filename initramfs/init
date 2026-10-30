@@ -1,0 +1,174 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Rescue is the default. Never search for or mount Android userdata implicitly.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox --install -s /bin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /run /newroot /sys/kernel/config
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=0755 tmpfs /run
+mount -t configfs configfs /sys/kernel/config
+log() { echo "picasso-init: $*" > /dev/kmsg; echo "picasso-init: $*"; }
+log "Linux $(uname -r); rescue by default, no storage writes"
+
+for i in $(seq 30); do
+    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$UDC" ] && break
+    sleep 1
+done
+if [ -n "$UDC" ]; then
+    G=/sys/kernel/config/usb_gadget/picasso
+    mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+    echo 0x1d6b > "$G/idVendor"
+    echo 0x0104 > "$G/idProduct"
+    echo picasso-lts > "$G/strings/0x409/manufacturer"
+    echo 'Picasso LTS rescue' > "$G/strings/0x409/product"
+    echo picasso-bringup > "$G/strings/0x409/serialnumber"
+    echo 250 > "$G/configs/c.1/MaxPower"
+    echo ncm+acm > "$G/configs/c.1/strings/0x409/configuration"
+    mkdir -p "$G/functions/ncm.usb0" "$G/functions/acm.GS0"
+    echo 02:50:49:00:00:02 > "$G/functions/ncm.usb0/dev_addr"
+    echo 02:50:49:00:00:01 > "$G/functions/ncm.usb0/host_addr"
+    ln -s "$G/functions/ncm.usb0" "$G/configs/c.1/"
+    ln -s "$G/functions/acm.GS0" "$G/configs/c.1/"
+    if echo "$UDC" > "$G/UDC"; then
+        IF=$(cat "$G/functions/ncm.usb0/ifname")
+        ip link set lo up
+        ip addr add 192.168.7.2/24 dev "$IF"
+        ip link set "$IF" up
+        log "USB network 192.168.7.2/24 (no SSH in rescue); serial shell on ttyGS0"
+    else
+        log 'UDC bind failed; use UART'
+    fi
+else
+    log 'no UDC; use UART'
+fi
+
+diskroot_valid() {
+    # This path is separate from the tmpfs handoff. A random Fedora directory,
+    # RAM-trial marker, or half-installed disk must never become the disk root.
+    case "$ROOTFSTYPE" in ext4|xfs) ;; *) return 1 ;; esac
+    awk -v fs="$ROOTFSTYPE" '$2 == "/newroot" && $3 == fs { ok=1 } END { exit !ok }' /proc/mounts || return 1
+    [ "$(cat /newroot/etc/picasso-fedora-root 2>/dev/null)" = PICASSO_FEDORA44_DISKROOT_V2 ] || return 1
+    [ "$(cat /newroot/etc/picasso-install-fstype 2>/dev/null)" = "$ROOTFSTYPE" ] || return 1
+    [ "$(cat /newroot/etc/picasso-install-partuuid 2>/dev/null)" = "${ROOTARG#PARTUUID=}" ] || return 1
+    [ "$(cat /newroot/etc/picasso-native-init.done 2>/dev/null)" = PICASSO_NATIVE_INIT_V1 ] || return 1
+    grep -qx 'ID=fedora' /newroot/etc/os-release || return 1
+    grep -qx 'VERSION_ID=44' /newroot/etc/os-release || return 1
+    grep -qx 'VARIANT_ID=server' /newroot/etc/os-release || return 1
+    [ -x /newroot/usr/lib/systemd/systemd ] || return 1
+    for d in dev proc sys run; do
+        [ -d /newroot/$d ] && [ ! -L /newroot/$d ] || return 1
+    done
+}
+
+# Only an explicit root=PARTUUID=... may start Fedora. Resolve via the kernel's
+# partition uevents (BusyBox findfs supports only filesystem UUID/LABEL, not GPT
+# PARTUUID), never a hard-coded /dev/sdaNN. First mount RO.
+ROOTARG=
+ROOTFSTYPE=
+RESCUE=0
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        root=PARTUUID=*) ROOTARG=${arg#root=} ;;
+        rootfstype=*) ROOTFSTYPE=${arg#rootfstype=} ;;
+        picasso.rescue=1) RESCUE=1 ;;
+    esac
+done
+ROOTRO=
+case "$ROOTFSTYPE" in
+    ext4) ROOTRO=ro,noload ;;
+    xfs) ROOTRO=ro,norecovery ;;
+esac
+# Filesystem selection is explicit too: never probe unknown/Android filesystems.
+if [ "$RESCUE" = 0 ] && [ -n "$ROOTARG" ] && [ -n "$ROOTRO" ]; then
+    ROOTDEV=
+    for i in $(seq 20); do
+        MATCHES=0
+        ROOTDEV=
+        for event in /sys/class/block/*/uevent; do
+            if grep -iqx "$ROOTARG" "$event" 2>/dev/null; then
+                block=${event%/uevent}
+                ROOTDEV=/dev/${block##*/}
+                MATCHES=$((MATCHES + 1))
+            fi
+        done
+        if [ "$MATCHES" -gt 1 ]; then
+            log 'duplicate root PARTUUID; refusing all matches'
+            ROOTDEV=
+            break
+        fi
+        [ -b "$ROOTDEV" ] && break
+        sleep 1
+    done
+    if [ -b "$ROOTDEV" ] && mount -t "$ROOTFSTYPE" -o "$ROOTRO" "$ROOTDEV" /newroot; then
+        if diskroot_valid; then
+            # Validation is read-only; only the opted-in, marked Fedora root goes RW.
+            umount /newroot
+            if mount -t "$ROOTFSTYPE" -o rw,noatime "$ROOTDEV" /newroot; then
+                mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+                for m in dev proc sys run; do mount --move /$m /newroot/$m; done
+                exec switch_root /newroot /usr/lib/systemd/systemd
+            fi
+        else
+            log 'root is not a completed Picasso Fedora Server 44 disk install; refusing it'
+            umount /newroot
+        fi
+    fi
+fi
+log 'rescue shell; physical USB/UART access is trusted. No automatic reboot.'
+if [ -c /dev/ttyGS0 ]; then
+    # Start this ONLY in rescue, never leave an unauthenticated root shell
+    # running across switch_root into Fedora's authenticated getty.
+    setsid sh -c 'while :; do getty -n -l /bin/sh 115200 ttyGS0; sleep 1; done' &
+fi
+# Keep PID 1 available for an explicit, physical-console-requested RAM handoff.
+# Default remains rescue: merely unpacking a rootfs does NOT boot it.
+(
+    while :; do
+        setsid /bin/sh -i </dev/console >/dev/console 2>&1
+        sleep 1
+    done
+) &
+ramroot_valid() {
+    [ "$(cat /run/picasso-ramroot.request 2>/dev/null)" = PICASSO_RAMROOT_V1 ] || return 1
+    # Fail closed: no block filesystem, bind-mounted Android directory, or
+    # unmounted directory can be accepted as the RAM root.
+    awk '$2 == "/newroot" && $3 == "tmpfs" { ok=1 } END { exit !ok }' /proc/mounts || return 1
+    [ "$(cat /newroot/etc/picasso-fedora-ramroot 2>/dev/null)" = PICASSO_FEDORA44_RAMROOT_V1 ] || return 1
+    [ "$(cat /newroot/etc/picasso-native-init.done 2>/dev/null)" = PICASSO_NATIVE_INIT_V1 ] || return 1
+    grep -qx 'ID=fedora' /newroot/etc/os-release || return 1
+    grep -qx 'VERSION_ID=44' /newroot/etc/os-release || return 1
+    grep -qx 'VARIANT_ID=server' /newroot/etc/os-release || return 1
+    [ -x /newroot/usr/lib/systemd/systemd ] || return 1
+    for d in dev proc sys run; do
+        [ -d /newroot/$d ] && [ ! -L /newroot/$d ] || return 1
+    done
+}
+while :; do
+    if [ -f /run/picasso-ramroot.request ]; then
+        if ramroot_valid; then
+            log 'validated Fedora Server 44 tmpfs root; stopping ALL rescue shells before PID 1 handoff'
+            rm -f /run/picasso-ramroot.request
+            # Kill the rescue getty loops AND their descendant/session shells.
+            # PID 1 is excluded by kill(-1); no unauthenticated shell survives
+            # into Fedora. There are no other userspace services at this point.
+            kill -TERM -1 2>/dev/null
+            sleep 1
+            kill -KILL -1 2>/dev/null
+            for m in dev proc sys run; do
+                mount --move /$m /newroot/$m || {
+                    echo "RAM root mount move failed: $m" > /dev/console
+                    while :; do sleep 60; done
+                }
+            done
+            exec switch_root /newroot /usr/lib/systemd/systemd
+        else
+            log 'RAM root request rejected: require tmpfs, Fedora Server 44 and completed native initialization'
+            rm -f /run/picasso-ramroot.request
+        fi
+    fi
+    sleep 1
+done

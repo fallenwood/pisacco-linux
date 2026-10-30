@@ -1,0 +1,44 @@
+--- a/drivers/net/wireless/ath/ath10k/wmi.c
++++ b/drivers/net/wireless/ath/ath10k/wmi.c
+@@ -8,6 +8,8 @@
+ 
+ #include <linux/skbuff.h>
+ #include <linux/ctype.h>
++#include <linux/moduleparam.h>
++#include <linux/of.h>
+ 
+ #include "core.h"
+ #include "htc.h"
+@@ -26,6 +28,12 @@
+ #define ATH10K_WMI_BARRIER_TIMEOUT_HZ (3 * HZ)
+ #define ATH10K_WMI_DFS_CONF_TIMEOUT_HZ (HZ / 6)
+ 
++/* Attended Picasso diagnostic only: observation, never alter TX/ACK status. */
++static bool picasso_mgmt_status;
++module_param(picasso_mgmt_status, bool, 0444);
++MODULE_PARM_DESC(picasso_mgmt_status,
++		"Picasso SNOC auth/assoc completion status only; no payload or MAC");
++
+ /* MAIN WMI cmd track */
+ static struct wmi_cmd_map wmi_cmd_map = {
+ 	.init_cmdid = WMI_INIT_CMDID,
+@@ -2449,6 +2457,19 @@
+ 	info = IEEE80211_SKB_CB(msdu);
+ 	kfree(pkt_addr);
+ 
++	if (picasso_mgmt_status && ar->hif.bus == ATH10K_BUS_SNOC &&
++	    of_machine_is_compatible("xiaomi,picasso") && msdu->len >= 24) {
++		struct ieee80211_hdr *hdr = (void *)msdu->data;
++
++		if (ieee80211_is_auth(hdr->frame_control) ||
++		    ieee80211_is_assoc_req(hdr->frame_control) ||
++		    ieee80211_is_reassoc_req(hdr->frame_control))
++			ath10k_info(ar,
++				    "Picasso mgmt observation: fc %04x desc %u status %u ack_rssi_raw %u len %u\n",
++				    le16_to_cpu(hdr->frame_control), param->desc_id,
++				    param->status, param->ack_rssi, msdu->len);
++	}
++
+ 	if (param->status) {
+ 		info->flags &= ~IEEE80211_TX_STAT_ACK;
+ 	} else {

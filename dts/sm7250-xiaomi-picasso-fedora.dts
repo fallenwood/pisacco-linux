@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* Headless LTS bring-up overlay on the pinned Picasso community device tree.
+ * No sunstone addresses, reserved memory or peripheral wiring are reused.
+ */
+#include <dt-bindings/thermal/thermal.h>
+#include "sm7250-xiaomi-picasso.dts"
+
+/ {
+	model = "Xiaomi Redmi K30 5G (picasso), Fedora LTS bring-up";
+	chosen {
+		bootargs = ""; /* CONFIG_CMDLINE_FORCE supplies the bring-up command line */
+		framebuffer@a0000000 {
+			memory-region = <&cont_splash_memory>;
+		};
+	};
+	/* V12.0.6.0.QGICNXM Lito DTBs also reserve CVP. The community
+	 * baseline omitted this 5 MiB hole: never give it to Linux, even with
+	 * the CVP driver disabled. Confirm against the phone's live DT later.
+	 */
+	reserved-memory {
+		pil_cvp_mem: cvp@86f00000 {
+			reg = <0 0x86f00000 0 0x500000>;
+			no-map;
+		};
+	};
+	/* ADSP and charging are deliberately not started during first boot. */
+	sound { status = "disabled"; };
+	audio-codec { status = "disabled"; };
+	adsp-sensor-pd { status = "disabled"; };
+	smp2p-sleepstate { status = "disabled"; };
+	pmic-glink { status = "disabled"; };
+	thermal-zones {
+		/delete-node/ gpuss-0-thermal;
+		/delete-node/ gpuss-1-thermal;
+	};
+};
+
+/* Hardware cpufreq policies: six little CPUs, one big, one prime. Keep the
+ * reference sensor/trip values and connect passive trips to CPU cooling.
+ */
+&{/thermal-zones/cpu0-thermal} {
+	cooling-maps { map0 { trip = <&cpu0_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu1-thermal} {
+	cooling-maps { map0 { trip = <&cpu1_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu2-thermal} {
+	cooling-maps { map0 { trip = <&cpu2_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu3-thermal} {
+	cooling-maps { map0 { trip = <&cpu3_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu4-thermal} {
+	cooling-maps { map0 { trip = <&cpu4_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu5-thermal} {
+	cooling-maps { map0 { trip = <&cpu5_alert0>; cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu6-thermal} {
+	cooling-maps { map0 { trip = <&cpu6_alert0>; cooling-device = <&cpu6 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+&{/thermal-zones/cpu7-thermal} {
+	cooling-maps { map0 { trip = <&cpu7_alert0>; cooling-device = <&cpu7 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; }; };
+};
+
+&mdss { status = "disabled"; };
+&mdp { status = "disabled"; };
+&dsi0 { status = "disabled"; };
+&dsi0_phy { status = "disabled"; };
+&dispcc { status = "disabled"; };
+&gpu { status = "disabled"; };
+&gmu { status = "disabled"; };
+&gpucc { status = "disabled"; };
+&gpu_smmu { status = "disabled"; };
+&adsp { status = "disabled"; };
+&vamacro { status = "disabled"; };
+&rxmacro { status = "disabled"; };
+&txmacro { status = "disabled"; };
+&swr1 { status = "disabled"; };
+&swr2 { status = "disabled"; };
+&lpass_tlmm { status = "disabled"; };
+&spi7 { status = "disabled"; };
+&pm8150l_lcdb { status = "disabled"; };
+&pm8150l_wled { status = "disabled"; };
+
+&usb_1_dwc3 {
+	/* Upstream binding spelling; the reference tree has dr-mode. */
+	/delete-property/ dr-mode;
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
+};

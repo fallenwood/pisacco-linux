@@ -1,0 +1,28 @@
+[Unit]
+Description=Picasso guarded real wlan0 UP (no automatic association; safety shutdown retained)
+Wants=NetworkManager.service firewalld.service
+After=NetworkManager.service firewalld.service systemd-udev-settle.service
+ConditionPathExists=/var/lib/picasso-wifi/auto-enable-consent-20261029.json
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -I /opt/picasso-wifi-radio/wifi-radio-service.py --run-radio-up
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-wifi-radio/wifi-radio-service.py --cleanup
+Restart=no
+WatchdogSec=8s
+TimeoutStartSec=180s
+TimeoutStopSec=45s
+KillMode=control-group
+OOMPolicy=stop
+CPUAffinity=0 1 2 3
+MemoryMax=256M
+UMask=0077
+RuntimeDirectory=picasso-wifi
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

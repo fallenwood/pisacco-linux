@@ -1,0 +1,33 @@
+[Unit]
+Description=Picasso root-leased FD-only private-copy RMTFS
+
+[Service]
+Type=exec
+DynamicUser=yes
+User=picasso-rmtfs-auto
+RootDirectory=/opt/picasso-wifi-trial/python-jail
+MountAPIVFS=no
+BindReadOnlyPaths=/usr
+OpenFile=/dev/qcom_rmtfs_mem1:rmtfs_mem
+OpenFile=@WORKDIR@/modem_fs1:modem_fs1
+OpenFile=@WORKDIR@/modem_fs2:modem_fs2
+OpenFile=@WORKDIR@/modem_fsg:modem_fsg
+ExecStart=/usr/bin/python3 -I /proxy/rmtfs-supervised.py --controller-pid @PID@ --lease-name @LEASE@ --memory-base @MEM_BASE@ --memory-major @MEM_MAJOR@ --memory-minor @MEM_MINOR@ --engine-sha256 @ENGINE_SHA@ --library-sha256 @LIB_SHA@
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+DevicePolicy=closed
+DeviceAllow=/dev/qcom_rmtfs_mem1 rw
+InaccessiblePaths=/proc /sys /etc/ssh /home /root
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_QIPCRTR
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+TimeoutStopSec=5s
+MemoryMax=128M
+Restart=no
+UMask=0077
+StandardOutput=journal
+StandardError=journal

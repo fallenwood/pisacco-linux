@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* OPT-IN Wi-Fi bring-up. All radio wiring comes from Picasso DTB 9 + DTBO 19.
+ * MPSS is registered for MANUAL start by qcom_q6v5_pas (auto_boot=false).
+ * No cellular networking, IPA, audio, charging or firmware-partition writes.
+ */
+#include "sm7250-xiaomi-picasso-fedora.dts"
+
+/ {
+	model = "Xiaomi Redmi K30 5G (picasso), experimental Wi-Fi";
+
+	smp2p_modem: smp2p-modem {
+		compatible = "qcom,smp2p";
+		qcom,smem = <435 428>;
+		interrupts-extended = <&aoss_qmp 2 2 IRQ_TYPE_EDGE_RISING>;
+		mboxes = <&aoss_qmp 2 2>;
+		qcom,local-pid = <0>;
+		qcom,remote-pid = <1>;
+		modem_smp2p_out: master-kernel {
+			qcom,entry-name = "master-kernel";
+			#qcom,smem-state-cells = <1>;
+		};
+		modem_smp2p_in: slave-kernel {
+			qcom,entry-name = "slave-kernel";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			#address-cells = <0>;
+		};
+	};
+};
+
+/* Do not bring up unrelated ADSP communication in this experiment. */
+&smp2p_adsp { status = "disabled"; };
+
+&{/soc@0} {
+	mpss: remoteproc@4080000 {
+		compatible = "qcom,sm7250-mpss-pas";
+		reg = <0 0x04080000 0 0x100>;
+		interrupts-extended = <&intc GIC_SPI 266 IRQ_TYPE_EDGE_RISING>,
+			<&modem_smp2p_in 0 IRQ_TYPE_EDGE_RISING>,
+			<&modem_smp2p_in 1 IRQ_TYPE_EDGE_RISING>,
+			<&modem_smp2p_in 2 IRQ_TYPE_EDGE_RISING>,
+			<&modem_smp2p_in 3 IRQ_TYPE_EDGE_RISING>,
+			<&modem_smp2p_in 7 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "wdog", "fatal", "ready", "handover", "stop-ack", "shutdown-ack";
+		clocks = <&rpmhcc RPMH_CXO_CLK>;
+		clock-names = "xo";
+		power-domains = <&rpmhpd RPMHPD_CX>, <&rpmhpd RPMHPD_MSS>;
+		power-domain-names = "cx", "mss";
+		memory-region = <&modem_wlan_mem>;
+		firmware-name = "qcom/sm7250/picasso/modem.mdt";
+		/* spm is the real AOSS QMP; aoss_qmp above is the IPCC label. */
+		qcom,qmp = <&spm>;
+		qcom,smem-states = <&modem_smp2p_out 0>;
+		qcom,smem-state-names = "stop";
+		status = "okay";
+
+		glink-edge {
+			interrupts-extended = <&aoss_qmp 2 0 IRQ_TYPE_EDGE_RISING>;
+			mboxes = <&aoss_qmp 2 0>;
+			label = "modem";
+			qcom,remote-pid = <1>;
+			ipcrtr {
+				compatible = "qcom,glink-smd";
+				qcom,glink-channels = "IPCRTR";
+			};
+		};
+	};
+
+	wifi: wifi@18800000 {
+		compatible = "qcom,wcn3990-wifi";
+		reg = <0 0x18800000 0 0x800000>;
+		reg-names = "membase";
+		/* This 2 MiB MSA is NOT a destination for the 8 MiB DSP ELF. */
+		memory-region = <&pil_wlan_mem>;
+		/* CE0..11, EXACT downstream order; NOT SM6350's 414..425. */
+		interrupts = <GIC_SPI 132 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 415 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 416 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 417 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 86 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 82 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 119 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 120 IRQ_TYPE_LEVEL_HIGH>,
+			<GIC_SPI 87 IRQ_TYPE_LEVEL_HIGH>;
+		iommus = <&apps_smmu 0xc0 0x1>;
+		vdd-0.8-cx-mx-supply = <&vreg_l1a_0p75>;
+		vdd-1.8-xo-supply = <&wifi_l14a_1p8>;
+		vdd-1.3-rfa-supply = <&vreg_l2c_1p1>;
+		vdd-3.3-ch0-supply = <&wifi_l10c_3p0>;
+		vdd-3.3-ch1-supply = <&wifi_l11c_3p0>;
+		firmware-name = "xiaomi/picasso";
+		qcom,calibration-variant = "Xiaomi-Picasso";
+		/* Do not assume msa-fixed-perm or host-cap quirks without a test. */
+		status = "okay";
+	};
+};
+
+/* Preserve the tested L1A 752mV, inside vendor's 352..952mV legal window. */
+&vreg_l1a_0p75 { regulator-initial-mode = <3>; };
+
+/* The baseline 1104mV L2C had no consumers and is BELOW the vendor Wi-Fi
+ * window. Match the vendor 1144..1328mV range, using HPM for the RF consumer.
+ */
+&vreg_l2c_1p1 {
+	regulator-min-microvolt = <1144000>;
+	regulator-max-microvolt = <1328000>;
+	regulator-initial-mode = <3>;
+};
+&pm8150_regulators {
+	wifi_l14a_1p8: ldo14 {
+		regulator-name = "wifi_l14a_1p8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-initial-mode = <3>;
+	};
+};
+&pm8150l_regulators {
+	wifi_l10c_3p0: ldo10 {
+		regulator-name = "wifi_l10c_3p0";
+		regulator-min-microvolt = <3000000>;
+		regulator-max-microvolt = <3312000>;
+		regulator-initial-mode = <3>;
+	};
+	wifi_l11c_3p0: ldo11 {
+		regulator-name = "wifi_l11c_3p0";
+		regulator-min-microvolt = <3000000>;
+		regulator-max-microvolt = <3312000>;
+		regulator-initial-mode = <3>;
+	};
+};

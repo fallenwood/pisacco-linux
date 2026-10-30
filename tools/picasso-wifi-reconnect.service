@@ -1,0 +1,43 @@
+[Unit]
+Description=Picasso guarded Wi-Fi reconnect supervisor (initial plus3 retries per boot)
+Wants=NetworkManager.service firewalld.service
+After=NetworkManager.service firewalld.service systemd-udev-settle.service
+ConditionPathExists=/var/lib/picasso-wifi/auto-enable-consent-20261029.json
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -I /opt/picasso-wifi-reconnect/wifi-reconnect-service.py --run-installed
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-wifi-reconnect/wifi-reconnect-service.py --cleanup
+Restart=no
+WatchdogSec=8s
+TimeoutStartSec=30s
+TimeoutStopSec=75s
+KillMode=control-group
+OOMPolicy=stop
+CPUAffinity=0 1 2 3
+MemoryMax=128M
+UMask=0077
+RuntimeDirectory=picasso-wifi-reconnect
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StateDirectory=picasso-wifi-reconnect
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+DevicePolicy=closed
+ReadWritePaths=/run/systemd/system
+SystemCallFilter=~@reboot @mount @swap @raw-io @clock @module
+InaccessiblePaths=-/sys/power/state -/sys/power/disk -/sys/power/mem_sleep
+
+[Install]
+WantedBy=multi-user.target

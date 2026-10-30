@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* OPT-IN follow-up: dynamic, guarded RMTFS memory; never a fixed guessed PA.
+ * Picasso vendor sharedmem-uio: client 1, 0x280000 usable bytes + guard memory.
+ * The mainline driver subtracts two 4KiB guard pages, so reserve 0x282000.
+ */
+#include <dt-bindings/firmware/qcom,scm.h>
+#include "sm7250-xiaomi-picasso-wifi.dts"
+
+/ {
+	reserved-memory {
+		rmtfs_mem: rmtfs {
+			compatible = "qcom,rmtfs-mem";
+			/* Memblock selects free RAM, excluding all fixed reserved holes.
+			 * Keep the shared PA below 4GiB for the 32-bit IOVEC protocol.
+			 */
+			size = <0 0x282000>;
+			alignment = <0 0x1000>;
+			alloc-ranges = <0 0x80000000 0 0x80000000>;
+			no-map;
+			qcom,use-guard-pages;
+			qcom,client-id = <1>;
+			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
+		};
+	};
+};

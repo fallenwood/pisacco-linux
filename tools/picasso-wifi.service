@@ -1,0 +1,27 @@
+[Unit]
+Description=Picasso guarded Wi-Fi (Chaldea then Chaldea-2.4G)
+Wants=NetworkManager.service firewalld.service
+After=NetworkManager.service firewalld.service systemd-udev-settle.service
+ConditionPathExists=/var/lib/picasso-wifi/credentials/consent.json
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -I /opt/picasso-wifi/wifi-service.py
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-wifi/wifi-service.py --cleanup
+Restart=no
+WatchdogSec=8s
+TimeoutStartSec=180s
+TimeoutStopSec=45s
+KillMode=control-group
+CPUAffinity=0 1 2 3
+MemoryMax=256M
+UMask=0077
+RuntimeDirectory=picasso-wifi
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

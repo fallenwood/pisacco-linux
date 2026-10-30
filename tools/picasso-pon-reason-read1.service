@@ -1,0 +1,31 @@
+[Unit]
+Description=Picasso one authorized read-only PON snapshot, no power action
+
+[Service]
+Type=exec
+User=root
+ExecStart=/usr/bin/python3 -I /opt/picasso-power/pon-read1/collect-pon-reason.py --confirmed-readonly
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-power/pon-read1/collect-pon-reason.py --cleanup
+Restart=no
+RuntimeMaxSec=20
+TimeoutStopSec=6
+KillMode=control-group
+MemoryMax=128M
+TasksMax=12
+CPUAffinity=0 1 2 3
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_MODULE
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/var/lib/picasso-power/pon-reason-read1-20261028
+SystemCallFilter=~@reboot @mount @swap @raw-io @clock

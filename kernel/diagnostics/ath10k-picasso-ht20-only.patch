@@ -1,0 +1,30 @@
+--- a/drivers/net/wireless/ath/ath10k/mac.c
++++ b/drivers/net/wireless/ath/ath10k/mac.c
+@@ -29,6 +29,12 @@
+ #include "wow.h"
+ #include "leds.h"
+ 
++/* Attended conservative bandwidth trial, no firmware/calibration changes. */
++static bool picasso_ht20_only;
++module_param(picasso_ht20_only, bool, 0444);
++MODULE_PARM_DESC(picasso_ht20_only,
++		"Picasso SNOC only: advertise HT20/legacy, not HT40 or VHT");
++
+ /*********/
+ /* Rates */
+ /*********/
+@@ -5023,6 +5029,14 @@
+ 	ht_cap = ath10k_get_ht_cap(ar);
+ 	vht_cap = ath10k_create_vht_cap(ar);
+ 
++	if (picasso_ht20_only && ar->hif.bus == ATH10K_BUS_SNOC &&
++	    of_machine_is_compatible("xiaomi,picasso")) {
++		ht_cap.cap &= ~(IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
++				IEEE80211_HT_CAP_SGI_40);
++		memset(&vht_cap, 0, sizeof(vht_cap));
++		ath10k_info(ar, "Picasso attended capability restriction: HT20/legacy only, no HT40/VHT\n");
++	}
++
+ 	if (ar->phy_capability & WHAL_WLAN_11G_CAPABILITY) {
+ 		band = &ar->mac.sbands[NL80211_BAND_2GHZ];
+ 		band->ht_cap = ht_cap;

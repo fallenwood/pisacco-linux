@@ -1,0 +1,26 @@
+[Unit]
+Description=Picasso guarded Wi-Fi factory firmware transfer (QRTR only)
+
+[Service]
+Type=exec
+RootDirectory=/opt/picasso-wifi-trial/tftp-root
+MountAPIVFS=no
+ExecStart=/lib/ld-linux-aarch64.so.1 --library-path /lib /usr/bin/tqftpserv -d
+ProtectSystem=strict
+# Existing jail /readwrite points here; retain the previously validated binding.
+StateDirectory=tqftpserv
+StateDirectoryMode=0700
+PrivateDevices=yes
+InaccessiblePaths=/proc /etc /home /root
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_QIPCRTR AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# Lifetime is monitored by guarded parent, independently stopped by ExecStopPost.
+# No IP networking or NV/backend paths exist in this factory-firmware-only jail.
+TimeoutStopSec=5s
+Restart=no
+StandardOutput=journal
+StandardError=journal

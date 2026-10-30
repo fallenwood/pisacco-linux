@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* Preparation only: preserve bootloader scanout, do NOT initialize an unknown
+ * panel or enable native MDSS/DSI. PM8150 PON wiring comes from this device's
+ * DTB9+DTBO19; WLED electrical properties are translated but remain disabled
+ * until boot-handoff/setup behavior is independently validated.
+ */
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "sm7250-xiaomi-picasso-fedora.dts"
+
+/ {
+	model = "Xiaomi Redmi K30 5G (picasso), screen handoff preparation";
+};
+
+&spmi_bus {
+	pm8150_screen: pmic@0 {
+		compatible = "qcom,pm8150", "qcom,spmi-pmic";
+		reg = <0 0>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pon@800 {
+			compatible = "qcom,pm8998-pon";
+			reg = <0x800>;
+
+			screen_pwrkey: pwrkey {
+				compatible = "qcom,pm8941-pwrkey";
+				interrupts = <0 8 0 IRQ_TYPE_EDGE_BOTH>;
+				debounce = <15625>;
+				bias-pull-up;
+				linux,code = <KEY_POWER>;
+				wakeup-source;
+			};
+
+			screen_voldown: resin {
+				compatible = "qcom,pm8941-resin";
+				interrupts = <0 8 1 IRQ_TYPE_EDGE_BOTH>;
+				debounce = <15625>;
+				bias-pull-up;
+				linux,code = <KEY_VOLUMEDOWN>;
+				wakeup-source;
+			};
+		};
+	};
+};
+
+&pm8150l_wled {
+	label = "picasso-backlight";
+	qcom,current-limit-microamp = <22500>;
+	qcom,ovp-millivolt = <28000>;
+	qcom,enabled-strings = <0 1 2>;
+	qcom,cabc-sel = <1>;
+	default-brightness = <0>;
+	max-brightness = <4095>;
+	/* Mainline WLED5 probe rewrites boost/setup defaults. Do not silently use
+	 * its default 32.5V OVP or unknown boost current on this physical board. */
+	status = "disabled";
+};
