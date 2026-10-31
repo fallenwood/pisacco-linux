@@ -1,0 +1,77 @@
+Subject: SM7250 manual MPSS PAS and WLAN domain mapping for Linux 7.3.1
+
+Use the existing PAS 4 resource with auto_boot=false. Register the
+SM7250 GPS/PDR and WLAN domain map without starting firmware.
+
+diff --git a/Documentation/devicetree/bindings/remoteproc/qcom,sm6350-pas.yaml b/Documentation/devicetree/bindings/remoteproc/qcom,sm6350-pas.yaml
+--- a/Documentation/devicetree/bindings/remoteproc/qcom,sm6350-pas.yaml
++++ b/Documentation/devicetree/bindings/remoteproc/qcom,sm6350-pas.yaml
+@@ -4,14 +4,15 @@
+ $id: http://devicetree.org/schemas/remoteproc/qcom,sm6350-pas.yaml#
+ $schema: http://devicetree.org/meta-schemas/core.yaml#
+ 
+-title: Qualcomm SM6350 Peripheral Authentication Service
++title: Qualcomm SM6350 and SM7250 Peripheral Authentication Service
+ 
+ maintainers:
+   - Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+ 
+ description:
+   Qualcomm SM6350 SoC Peripheral Authentication Service loads and boots
+-  firmware on the Qualcomm DSP Hexagon cores.
++  firmware on the Qualcomm DSP Hexagon cores. SM7250 uses PAS 4 for MPSS
++  with CX/MSS proxy power domains.
+ 
+ properties:
+   compatible:
+@@ -19,6 +20,7 @@
+       - qcom,sm6350-adsp-pas
+       - qcom,sm6350-cdsp-pas
+       - qcom,sm6350-mpss-pas
++      - qcom,sm7250-mpss-pas
+ 
+   reg:
+     maxItems: 1
+@@ -136,6 +138,7 @@
+         compatible:
+           enum:
+             - qcom,sm6350-mpss-pas
++            - qcom,sm7250-mpss-pas
+     then:
+       properties:
+         power-domains:
+diff --git a/drivers/remoteproc/qcom_q6v5_pas.c b/drivers/remoteproc/qcom_q6v5_pas.c
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -1881,6 +1881,7 @@
+ 	{ .compatible = "qcom,sm6350-adsp-pas", .data = &sm6350_adsp_resource },
+ 	{ .compatible = "qcom,sm6350-cdsp-pas", .data = &sm6350_cdsp_resource },
+ 	{ .compatible = "qcom,sm6350-mpss-pas", .data = &mpss_resource_init },
++	{ .compatible = "qcom,sm7250-mpss-pas", .data = &mpss_resource_init },
+ 	{ .compatible = "qcom,sm6375-adsp-pas", .data = &sm6350_adsp_resource },
+ 	{ .compatible = "qcom,sm6375-cdsp-pas", .data = &sm8150_cdsp_resource },
+ 	{ .compatible = "qcom,sm6375-mpss-pas", .data = &sm6375_mpss_resource },
+diff --git a/drivers/soc/qcom/qcom_pd_mapper.c b/drivers/soc/qcom/qcom_pd_mapper.c
+--- a/drivers/soc/qcom/qcom_pd_mapper.c
++++ b/drivers/soc/qcom/qcom_pd_mapper.c
+@@ -553,6 +553,12 @@
+ 	&adsp_root_pd,
+ 	&adsp_sensor_pd,
+ 	&cdsp_root_pd,
++	&mpss_wlan_pd,
++	NULL,
++};
++
++static const struct qcom_pdm_domain_data *sm7250_domains[] = {
++	&mpss_root_pd_gps_pdr,
+ 	&mpss_wlan_pd,
+ 	NULL,
+ };
+@@ -655,6 +661,7 @@
+ 	{ .compatible = "qcom,sm6350", .data = sm6350_domains, },
+ 	{ .compatible = "qcom,sm7150", .data = sm7150_domains, },
+ 	{ .compatible = "qcom,sm7225", .data = sm6350_domains, },
++	{ .compatible = "qcom,sm7250", .data = sm7250_domains, },
+ 	{ .compatible = "qcom,sm7325", .data = sc7280_domains, },
+ 	{ .compatible = "qcom,sm8150", .data = sm8150_domains, },
+ 	{ .compatible = "qcom,sm8250", .data = sm8250_domains, },

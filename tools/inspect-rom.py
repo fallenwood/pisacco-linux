@@ -16,6 +16,7 @@ import zipfile
 
 from bootimg import parse_stock
 from fdt import dtbo_entries, fixed_regions, nodes, region_covered, split_fdts
+from kernel_profile import select_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -74,6 +75,7 @@ def describe(blob):
 
 
 def inspect(archive_path):
+    profile = select_profile(ROOT)
     device = json.loads((ROOT/'device.json').read_text())
     pin, baseline = device['rom_package'], device['boot_baseline']
     before = archive_path.stat()
@@ -93,13 +95,13 @@ def inspect(archive_path):
     base_index, overlay_index = baseline['dtb_index'], baseline['dtbo_index']
     if not 0 <= base_index < len(bases) or not 0 <= overlay_index < len(overlays):
         raise ValueError('ADB-reported DTB/DTBO index not present in ROM')
-    out = ROOT/'out/rom-audit'
+    out = profile.output/'rom-audit'
     out.mkdir(parents=True, exist_ok=True)
     base_path, overlay_path = out/f'base-{base_index:02d}.dtb', out/f'overlay-{overlay_index:02d}.dtbo'
     merged_path = out/f'merged-{base_index:02d}-{overlay_index:02d}.dtb'
     base_path.write_bytes(bases[base_index])
     overlay_path.write_bytes(overlays[overlay_index]['data'])
-    tools = ROOT/'out/kbuild/scripts/dtc'
+    tools = profile.output/'kbuild/scripts/dtc'
     for program in ('fdtoverlay', 'dtc'):
         if not (tools/program).is_file():
             raise ValueError('build the LTS kernel first; its dtc/fdtoverlay is needed')
@@ -107,7 +109,7 @@ def inspect(archive_path):
     for path in (base_path, overlay_path, merged_path):
         with path.with_suffix('.dtc.log').open('w') as log:
             subprocess.run([str(tools/'dtc'), '-I', 'dtb', '-O', 'dts', '-o', str(path.with_suffix('.dts')), str(path)], stderr=log, check=True)
-    runtime_path = ROOT/'out/picasso.dtb'
+    runtime_path = profile.output/'picasso.dtb'
     merged = nodes(merged_path.read_bytes())
     required = fixed_regions(merged)
     available = fixed_regions(nodes(runtime_path.read_bytes()))

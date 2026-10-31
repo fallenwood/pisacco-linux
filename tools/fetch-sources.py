@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Fetch hash-pinned inputs; extract ONLY the static AArch64 BusyBox executable."""
 import hashlib
-import json
 from pathlib import Path
 import struct
 import tarfile
 import urllib.request
+
+from kernel_profile import select_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,7 +18,7 @@ def digest(path):
 
 
 def main():
-    manifest = json.loads((ROOT / 'sources.json').read_text())
+    manifest = select_profile(ROOT).sources()
     dl = ROOT / 'downloads'
     dl.mkdir(exist_ok=True)
     for item in manifest['downloads']:
@@ -41,8 +42,13 @@ def main():
         blob = archive.extractfile(member).read()
     if blob[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', blob, 18)[0] != 183:
         raise SystemExit('BusyBox is not AArch64 ELF64')
-    (dl / 'busybox').write_bytes(blob)
-    (dl / 'busybox').chmod(0o755)
+    executable = dl / 'busybox'
+    if executable.exists():
+        if executable.read_bytes() != blob or executable.stat().st_mode & 0o777 != 0o755:
+            raise SystemExit('Existing BusyBox executable differs; refusing to overwrite it')
+    else:
+        executable.write_bytes(blob)
+        executable.chmod(0o755)
 
 
 if __name__ == '__main__':

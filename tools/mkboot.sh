@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 STOCK=${1:?usage: tools/mkboot.sh /path/to/your-picasso-stock-boot.img}
-OUT=$ROOT/out
+OUT=$(python3 "$ROOT/tools/kernel_profile.py" output)
 for file in "$STOCK" "$OUT/Image" "$OUT/picasso.dtb" "$OUT/kernel.config"; do
     [[ -f $file ]] || { echo "Missing input: $file" >&2; exit 1; }
 done
@@ -12,12 +12,16 @@ done
 python3 - "$ROOT" "$STOCK" <<'PY'
 import hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(root/'tools'))
+from kernel_profile import select_profile
+selected = select_profile(root)
+out = selected.output
 def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
-profile = root/'out/dtb-profile.txt'
-if profile.exists() and profile.read_text().strip() in ('wifi','wifi-rmtfs'):
-    audit_path = root/'out/wifi-audit.json'
+profile = out/'dtb-profile.txt'
+if profile.exists() and profile.read_text().strip() in ('wifi','wifi-rmtfs','power-trial'):
+    audit_path = out/'wifi-audit.json'
     if not audit_path.exists():
         raise SystemExit('Wi-Fi audit missing; run tools/audit-wifi.py before packing')
     radio = json.loads(audit_path.read_text())
@@ -25,10 +29,10 @@ if profile.exists() and profile.read_text().strip() in ('wifi','wifi-rmtfs'):
             radio.get('mpss_auto_boot') is False and
             radio.get('modem_mdt_within_reserved_memory') is True):
         raise SystemExit('Wi-Fi offline audit incomplete; refusing trial image')
-    if profile.read_text().strip() == 'wifi-rmtfs' and radio.get('rmtfs',{}).get('checked') is not True:
+    if profile.read_text().strip() in ('wifi-rmtfs','power-trial') and radio.get('rmtfs',{}).get('checked') is not True:
         raise SystemExit('RMTFS memory audit missing; rerun audit-wifi.py --require-rmtfs')
     for name,key in (('Image','image_sha256'),('picasso.dtb','candidate_dtb_sha256'),('kernel.config','kernel_config_sha256')):
-        if digest(root/'out'/name) != radio.get(key):
+        if digest(out/name) != radio.get(key):
             raise SystemExit('Stale Wi-Fi audit input: ' + name)
 if (root/'device.json').exists():
     device = json.loads((root/'device.json').read_text())
@@ -36,14 +40,15 @@ if (root/'device.json').exists():
     if baseline:
         if digest(pathlib.Path(sys.argv[2])) != baseline['boot_sha256']:
             raise SystemExit('Refusing boot input: it is not the configured current-ROM baseline')
-        audit = json.loads((root/baseline['audit_file']).read_text())
+        audit_path = root/baseline['audit_file'] if selected.version == '6.18.58' else out/'rom-audit/compatibility.json'
+        audit = json.loads(audit_path.read_text())
         if audit.get('offline_overlay_applied') is not True or audit.get('uncovered_fixed_regions') != []:
             raise SystemExit('ROM overlay/fixed-memory audit has not passed; run tools/inspect-rom.py')
         if audit['archive']['sha256'] != device['rom_package']['sha256']:
             raise SystemExit('ROM audit belongs to a different archive')
         if any(audit['selected_indices'][key] != baseline[key + '_index'] for key in ('dtb', 'dtbo')):
             raise SystemExit('ROM audit indices differ from the configured baseline')
-        for relative in (baseline['boot_file'], baseline['dtbo_file'], 'out/picasso.dtb'):
+        for relative in (baseline['boot_file'], baseline['dtbo_file'], str((out/'picasso.dtb').relative_to(root))):
             if digest(root/relative) != audit['inputs_sha256'][relative]:
                 raise SystemExit('Stale ROM audit input: ' + relative + '; rerun tools/inspect-rom.py')
         if digest(root/baseline['dtbo_file']) != baseline['dtbo_sha256']:
@@ -85,9 +90,12 @@ PY
 python3 "$ROOT/tools/bootimg.py" --stock "$STOCK" --kernel "$OUT/shim.bin" --output "$OUT/boot-picasso.img"
 python3 - "$ROOT" "$STOCK" <<'PY'
 import hashlib, json, pathlib, struct, sys
-root = pathlib.Path(sys.argv[1]); out = root / 'out'
+root = pathlib.Path(sys.argv[1])
 sys.path.insert(0, str(root/'tools'))
 from bootimg import parse_stock
+from kernel_profile import select_profile
+profile = select_profile(root)
+out = profile.output
 stock_path = pathlib.Path(sys.argv[2])
 stock = stock_path.read_bytes()
 info = parse_stock(stock)
@@ -95,8 +103,9 @@ device = json.loads((root/'device.json').read_text()) if (root/'device.json').ex
 files = [stock_path, out/'Image', out/'picasso.dtb', out/'kernel.config', out/'shim.bin', out/'boot-picasso.img']
 baseline = device.get('boot_baseline') if device else None
 if baseline:
-    files += [root/baseline['dtbo_file'], root/baseline['audit_file']]
-manifest = {'status': 'experimental; not hardware tested', 'sources': json.loads((root/'sources.json').read_text()),
+    audit_path = root/baseline['audit_file'] if profile.version == '6.18.58' else out/'rom-audit/compatibility.json'
+    files += [root/baseline['dtbo_file'], audit_path]
+manifest = {'status': 'experimental; not hardware tested', 'sources': profile.sources(),
             'device': device,
             'stock_header': {'version': 2, 'page_size': info['page_size'], 'dtb_count': info['dtb_count'],
                              'dtb_offset': info['dtb_offset'], 'dtb_size': len(info['dtb']),
@@ -110,9 +119,11 @@ if device:
     manifest['stock_matches_device_pin'] = hashlib.sha256(stock).hexdigest() == expected
     if baseline:
         manifest['boot_baseline'] = baseline
-        manifest['offline_overlay_audit'] = str(root/baseline['audit_file'])
+        manifest['offline_overlay_audit'] = str(audit_path)
     manifest['boot_test_status'] = device.get('current_os', {}).get('boot_test_status',
         device.get('current_rom', {}).get('boot_test_status', 'unverified'))
+    if profile.version != '6.18.58':
+        manifest['boot_test_status'] = 'unverified_offline_candidate'
     # A previous phone boot validates only that exact image, never a rebuild
     # with different Image/DTB/initramfs/shim bytes. This script stays offline.
     tested = device.get('hardware_test', {})

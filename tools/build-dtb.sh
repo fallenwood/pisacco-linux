@@ -3,14 +3,15 @@
 # Build one explicit mainline DT variant; no phone IO or firmware loading.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
-SRC=$ROOT/src/linux-6.18.58
-OUT=$ROOT/out
+SRC=$(python3 "$ROOT/tools/kernel_profile.py" source)
+OUT=$(python3 "$ROOT/tools/kernel_profile.py" output)
 case ${1:-server} in
     server) DTS=$ROOT/dts/sm7250-xiaomi-picasso-fedora.dts ;;
     pm-telemetry) DTS=$ROOT/dts/sm7250-xiaomi-picasso-pm-telemetry.dts ;;
     wifi) DTS=$ROOT/dts/sm7250-xiaomi-picasso-wifi.dts ;;
     wifi-rmtfs) DTS=$ROOT/dts/sm7250-xiaomi-picasso-wifi-rmtfs.dts ;;
-    *) echo 'usage: tools/build-dtb.sh [server|pm-telemetry|wifi|wifi-rmtfs]' >&2; exit 1 ;;
+    power-trial) DTS=$ROOT/dts/sm7250-xiaomi-picasso-power-trial.dts ;;
+    *) echo 'usage: tools/build-dtb.sh [server|pm-telemetry|wifi|wifi-rmtfs|power-trial]' >&2; exit 1 ;;
 esac
 [[ -x $OUT/kbuild/scripts/dtc/dtc ]] || { echo 'Build the kernel first' >&2; exit 1; }
 if [[ ${1:-server} = pm-telemetry ]]; then

@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import struct
 import fdt
+from kernel_profile import select_profile
 
 
 def require(ok, message):
@@ -140,11 +141,13 @@ def main():
     if a.require_rmtfs:
         r['rmtfs']=audit_rmtfs(candidate)
         require('CONFIG_QCOM_RMTFS_MEM=m\n' in c, 'RMTFS must remain a manually loaded module')
-    require(re.search(r'^CONFIG_LOCALVERSION="-picasso-lts-wifi[0-9]+"$',c,re.M), 'Trial modules would collide with installed kernel')
+    root=Path(__file__).resolve().parents[1]
+    profile=select_profile(root)
+    family='-picasso' if profile.version=='7.3.1' else '-picasso-lts'
+    require(re.search(r'^CONFIG_LOCALVERSION="'+re.escape(family)+r'-wifi[0-9]+"$',c,re.M), 'Trial modules would collide with installed kernel')
     for name in ('ATH10K_SNOC','QCOM_Q6V5_PAS','QRTR','QRTR_SMD','QCOM_PD_MAPPER'):
         require('CONFIG_'+name+'=m\n' in c,'Missing trial module: '+name)
-    root=Path(__file__).resolve().parents[1]
-    pas=(root/'src/linux-6.18.58/drivers/remoteproc/qcom_q6v5_pas.c').read_text()
+    pas=(profile.source/'drivers/remoteproc/qcom_q6v5_pas.c').read_text()
     require('"qcom,sm7250-mpss-pas", .data = &mpss_resource_init' in pas, 'Unknown PAS driver data')
     data=pas.split('static const struct qcom_pas_data mpss_resource_init = {',1)[1].split('};',1)[0]
     require('.auto_boot = false' in data and '.pas_id = 4' in data,'MPSS must not automatically start')

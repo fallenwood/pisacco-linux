@@ -51,7 +51,8 @@ class ShimTests(unittest.TestCase):
             tmp = Path(td)
             for directory in ('tools', 'shim', 'out'):
                 (tmp/directory).mkdir()
-            for relative in ('tools/mkboot.sh', 'tools/bootimg.py', 'shim/copydown.S', 'sources.json'):
+            for relative in ('tools/mkboot.sh', 'tools/bootimg.py', 'tools/kernel_profile.py',
+                             'shim/copydown.S', 'sources.json'):
                 shutil.copy2(ROOT/relative, tmp/relative)
             (tmp/'out/Image').write_bytes(image(b'not-a-real-kernel'))
             (tmp/'out/picasso.dtb').write_bytes(fdt())
@@ -178,6 +179,24 @@ class ShimTests(unittest.TestCase):
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn(b'not the configured current-ROM baseline', failed.stderr)
             self.assertEqual((tmp/'out/boot-picasso.img').read_bytes(), result)
+            # A selected parallel profile cannot inherit even an exact-byte
+            # historical result, and must leave the default image/receipt alone.
+            previous_manifest = manifest_path.read_bytes()
+            candidate = tmp/'out/linux-7.3.1'
+            candidate.mkdir()
+            (candidate/'Image').write_bytes(original)
+            (candidate/'picasso.dtb').write_bytes(fdt())
+            shutil.copyfile(tmp/'out/kernel.config', candidate/'kernel.config')
+            shutil.copyfile(ROOT/'sources-7.3.1.json', tmp/'sources-7.3.1.json')
+            (tmp/'device.json').write_text(json.dumps(device))
+            env = dict(os.environ, KERNEL_VERSION='7.3.1')
+            subprocess.run(['bash', str(tmp/'tools/mkboot.sh'), str(tmp/'stock.img')],
+                           env=env, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            fresh = json.loads((candidate/'boot-manifest.json').read_text())
+            self.assertEqual(fresh['boot_test_status'], 'unverified_offline_candidate')
+            self.assertFalse(fresh['hardware_test_matches_image'])
+            self.assertEqual((tmp/'out/boot-picasso.img').read_bytes(), result)
+            self.assertEqual(manifest_path.read_bytes(), previous_manifest)
 
 
 @unittest.skipUnless(os.environ.get('PICASSO_RUN_QEMU_TESTS') == '1' and shutil.which('qemu-aarch64-static') and (ROOT/'downloads/busybox').exists(), 'optional QEMU test; set PICASSO_RUN_QEMU_TESTS=1, or validate applets natively on the phone')

@@ -1,0 +1,81 @@
+From: Picasso Linux contributors
+Subject: [PATCH] net: qrtr: reply once to the first HELLO from a peer
+
+The endpoint-registration handshake can transmit before an automatic node
+ID is known or before the remote is ready to receive. A successful xmit
+then latches hello_sent, while the name server no longer replies when the
+remote subsequently introduces itself. There is no recovery for that
+initial, unacknowledged HELLO.
+
+Retain the proactive core handshake for slave-role endpoints, but also
+reply to the first inbound HELLO before advertising local services. At
+this point endpoint_post has learned the peer's actual node ID. Remember
+the reply in the name server's per-peer state to avoid HELLO ping-pong;
+BYE already destroys that state. Failed sends remain errors and do not
+consume the reply.
+
+This restores the relevant receive-side recovery from 6.18 without
+reintroducing its unconditional reply to every duplicate HELLO.
+
+Link: https://lore.kernel.org/r/20260827-qrtr-hello-on-ep-register-v3-1-ca289ff99abf@oss.qualcomm.com
+---
+ net/qrtr/ns.c | 38 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/net/qrtr/ns.c b/net/qrtr/ns.c
+--- a/net/qrtr/ns.c
++++ b/net/qrtr/ns.c
+@@ -69,6 +69,7 @@ struct qrtr_node {
+ 	unsigned int id;
+ 	struct xarray servers;
+ 	u32 server_count;
++	bool hello_replied;
+ };
+ 
+ /* Max nodes, server, lookup limits are chosen based on the current platform
+@@ -327,8 +328,45 @@ static int server_del(struct qrtr_node *node, unsigned int port, bool bcast)
+ 	return 0;
+ }
+ 
++static int say_hello(struct sockaddr_qrtr *dest)
++{
++	struct qrtr_ctrl_pkt pkt;
++	struct msghdr msg = { };
++	struct kvec iv;
++	int ret;
++
++	iv.iov_base = &pkt;
++	iv.iov_len = sizeof(pkt);
++
++	memset(&pkt, 0, sizeof(pkt));
++	pkt.cmd = cpu_to_le32(QRTR_TYPE_HELLO);
++
++	msg.msg_name = (struct sockaddr *)dest;
++	msg.msg_namelen = sizeof(*dest);
++
++	ret = kernel_sendmsg(qrtr_ns.sock, &msg, &iv, 1, sizeof(pkt));
++	if (ret < 0)
++		pr_err("failed to send hello msg\n");
++
++	return ret;
++}
++
+ static int ctrl_cmd_hello(struct sockaddr_qrtr *sq)
+ {
++	struct qrtr_node *node;
++	int ret;
++
++	node = node_get(sq->sq_node);
++	if (!node)
++		return -ENOMEM;
++
++	if (!node->hello_replied) {
++		ret = say_hello(sq);
++		if (ret < 0)
++			return ret;
++		node->hello_replied = true;
++	}
++
+ 	return announce_servers(sq);
+ }
+ 

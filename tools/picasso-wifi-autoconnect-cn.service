@@ -1,0 +1,30 @@
+[Unit]
+Description=Picasso guarded CN boot WLAN autoconnect with raw regulatory evidence
+Wants=NetworkManager.service firewalld.service
+After=NetworkManager.service firewalld.service systemd-udev-settle.service
+ConditionPathExists=/opt/picasso-wifi-autoconnect-cn/policy.json
+ConditionPathExists=/var/lib/picasso-wifi/auto-enable-consent-20261029.json
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStartPre=/usr/bin/python3 -I /opt/picasso-startup/wait-for-cool.py
+ExecStart=/usr/bin/python3 -I /opt/picasso-wifi-autoconnect-cn/wifi-autoconnect-cn-service.py --run
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-wifi-autoconnect-cn/wifi-autoconnect-cn-service.py --cleanup
+Restart=no
+WatchdogSec=8s
+TimeoutStartSec=480s
+TimeoutStopSec=45s
+KillMode=control-group
+OOMPolicy=stop
+CPUAffinity=0 1 2 3
+MemoryMax=256M
+UMask=0077
+RuntimeDirectory=picasso-wifi
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

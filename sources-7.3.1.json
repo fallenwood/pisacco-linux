@@ -1,0 +1,20 @@
+{
+  "kernel_version": "7.3.1",
+  "fedora_release": "44",
+  "port_reference": {
+    "url": "https://github.com/sm7250-mainline/linux_kernel",
+    "commit": "9272a06bfd3f2bb5eb952b41c70f0686a340e897"
+  },
+  "downloads": [
+    {
+      "file": "linux-7.3.1.tar.xz",
+      "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.1.tar.xz",
+      "sha256": "fa595aad93734f829c963c2a90ef7c3673224fd7fdae7b49406e397cde2de231"
+    },
+    {
+      "file": "busybox-static.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/busybox-static-1.37.0-r30.apk",
+      "sha256": "44c9abdfb970f398fa72c8382fe2d8808eea16beaf82daf6ac708b92f1b8659e"
+    }
+  ]
+}
