@@ -1,0 +1,121 @@
+diff --git a/Documentation/devicetree/bindings/input/qcom,pm8941-pwrkey.yaml b/Documentation/devicetree/bindings/input/qcom,pm8941-pwrkey.yaml
+index f2543d6..eebc42f 100644
+--- a/Documentation/devicetree/bindings/input/qcom,pm8941-pwrkey.yaml
++++ b/Documentation/devicetree/bindings/input/qcom,pm8941-pwrkey.yaml
+@@ -18,6 +18,8 @@ properties:
+           - qcom,pm8941-resin
+           - qcom,pmk8350-pwrkey
+           - qcom,pmk8350-resin
++          - xiaomi,picasso-pwrkey-input
++          - xiaomi,picasso-resin-input
+       - items:
+           - const: qcom,pmm8654au-pwrkey
+           - const: qcom,pmk8350-pwrkey
+@@ -53,6 +55,22 @@ properties:
+ 
+ allOf:
+   - $ref: input.yaml#
++  - if:
++      properties:
++        compatible:
++          contains:
++            enum:
++              - xiaomi,picasso-pwrkey-input
++              - xiaomi,picasso-resin-input
++    then:
++      description: |
++        Picasso loader input-only mode inherits firmware pull/debounce/reset
++        configuration and does not register a PS_HOLD reboot notifier.
++        IRQ masking/acknowledgement is still performed by the SPMI IRQ core.
++      properties:
++        debounce: false
++        bias-pull-up: false
++        wakeup-source: false
+   - if:
+       properties:
+         compatible:
+diff --git a/drivers/input/misc/pm8941-pwrkey.c b/drivers/input/misc/pm8941-pwrkey.c
+index 53249d2..9c6ce39 100644
+--- a/drivers/input/misc/pm8941-pwrkey.c
++++ b/drivers/input/misc/pm8941-pwrkey.c
+@@ -61,6 +61,7 @@ struct pm8941_data {
+ 	bool		supports_debounce_config;
+ 	bool		has_pon_pbs;
+ 	bool		wakeup_source_default;
++	bool		input_only;
+ 	const char	*name;
+ 	const char	*phys;
+ };
+@@ -162,8 +163,11 @@ static irqreturn_t pm8941_pwrkey_irq(int irq, void *_data)
+ 	}
+ 
+ 	err = regmap_read(pwrkey->regmap, pwrkey->baseaddr + PON_RT_STS, &sts);
+-	if (err)
++	if (err) {
++		if (pwrkey->data->input_only)
++			dev_err_ratelimited(pwrkey->dev, "key status read failed: %d\n", err);
+ 		return IRQ_HANDLED;
++	}
+ 
+ 	sts &= pwrkey->data->status_bit;
+ 
+@@ -175,7 +179,7 @@ static irqreturn_t pm8941_pwrkey_irq(int irq, void *_data)
+ 	 * Simulate a press event in case a release event occurred without a
+ 	 * corresponding press event.
+ 	 */
+-	if (!pwrkey->last_status && !sts) {
++	if (!pwrkey->data->input_only && !pwrkey->last_status && !sts) {
+ 		input_report_key(pwrkey->input, pwrkey->code, 1);
+ 		input_sync(pwrkey->input);
+ 	}
+@@ -365,6 +369,19 @@ static int pm8941_pwrkey_probe(struct platform_device *pdev)
+ 	if (error)
+ 		return error;
+ 
++	if (pwrkey->data->input_only) {
++		unsigned int status;
++
++		error = regmap_read(pwrkey->regmap,
++				   pwrkey->baseaddr + PON_RT_STS, &status);
++		if (error) {
++			dev_err(pwrkey->dev, "initial key status read failed: %d\n", error);
++			return error;
++		}
++		pwrkey->last_status = !!(status & pwrkey->data->status_bit);
++		input_report_key(pwrkey->input, pwrkey->code, pwrkey->last_status);
++	}
++
+ 	if (pwrkey->data->pull_up_bit) {
+ 		error = regmap_update_bits(pwrkey->regmap,
+ 					   pwrkey->baseaddr + PON_PULL_CTL,
+@@ -452,6 +469,21 @@ static const struct pm8941_data pon_gen3_pwrkey_data = {
+ 	.wakeup_source_default = true,
+ };
+ 
++/* Inherit firmware pull/debounce/reset policy; only observe key status/IRQs. */
++static const struct pm8941_data picasso_pwrkey_input_data = {
++	.status_bit = PON_KPDPWR_N_SET,
++	.name = "picasso_pwrkey_input",
++	.phys = "picasso_pwrkey/input0",
++	.input_only = true,
++};
++
++static const struct pm8941_data picasso_resin_input_data = {
++	.status_bit = PON_RESIN_N_SET,
++	.name = "picasso_resin_input",
++	.phys = "picasso_resin/input0",
++	.input_only = true,
++};
++
+ static const struct pm8941_data pon_gen3_resin_data = {
+ 	.status_bit = PON_GEN3_RESIN_N_SET,
+ 	.name = "pmic_resin",
+@@ -463,6 +495,8 @@ static const struct pm8941_data pon_gen3_resin_data = {
+ };
+ 
+ static const struct of_device_id pm8941_pwr_key_id_table[] = {
++	{ .compatible = "xiaomi,picasso-pwrkey-input", .data = &picasso_pwrkey_input_data },
++	{ .compatible = "xiaomi,picasso-resin-input", .data = &picasso_resin_input_data },
+ 	{ .compatible = "qcom,pm8941-pwrkey", .data = &pwrkey_data },
+ 	{ .compatible = "qcom,pm8941-resin", .data = &resin_data },
+ 	{ .compatible = "qcom,pmk8350-pwrkey", .data = &pon_gen3_pwrkey_data },

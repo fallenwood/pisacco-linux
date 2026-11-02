@@ -109,11 +109,15 @@ def cleanup():
             p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
             out['actions'].append({'program':args[0],'returncode':p.returncode});return p
         except Exception as exc:out['actions'].append({'program':args[0],'error':type(exc).__name__});return None
+    profile_safe=True
     if r.get('radio_armed'):
-        for name in NAMES:run(['nmcli','--wait','3','connection','down','picasso-auto-'+name],5)
+        suffix=r.get('network_profile_suffix','')
+        if suffix in ('','-ipv6'):
+            for name in NAMES:run(['nmcli','--wait','3','connection','down','picasso-auto-'+name+suffix],5)
+        else:profile_safe=False;out['profile_error']='Invalid cleanup network profile suffix'
         run(['nmcli','device','set','wlan0','managed','no'])
         run(['modprobe','-r','ath10k_snoc'],15)
-    safe=True;crashed=False
+    safe=profile_safe;crashed=False
     if r.get('proc'):
         try:
             proc=Path(r['proc']);require(proc.parent==Path('/sys/class/remoteproc'),'Unexpected remoteproc path')
@@ -179,10 +183,11 @@ def cleanup():
 class Service:
     def __init__(self):
         self.cfg=json.loads((OPT/'config.json').read_text());self.rules=load('wifi-fallback-policy');self.reg=load('audit-wifi-regulatory')
+        self.network=self.rules.network_policy(self.cfg)
         self.proc=None;self.mac=None;self.helper=None;self.live=False;self.stopping=False;self.failure=None;self.last_progress=time.monotonic()
         self.deadline=time.monotonic()+150;self.stop_event=threading.Event();self.health_thread=None
         session=uuid.uuid4().hex[:12];history=STATE/'history'/session;history.mkdir(mode=0o700,parents=True)
-        self.record={'session':session,'history':str(history),'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'status':'starting','attempts':[],'peak_temperature_mc':0,'credential_contents_read':False,'cpu_before':{},'children':[]}
+        self.record={'session':session,'history':str(history),'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'status':'starting','attempts':[],'peak_temperature_mc':0,'credential_contents_read':False,'cpu_before':{},'children':[],'network_profile_suffix':self.network['profile_suffix']}
         self.save()
         self.lease='picasso-rmtfs-'+session
 
@@ -361,15 +366,15 @@ class Service:
             phy=(Path('/sys/class/net/wlan0/phy80211')).resolve().name
             frequencies=load('wifi-bss').active_2g_frequencies(self.text(['iw','phy',phy,'info']))
             self.run(['iw','dev','wlan0','scan','freq',*map(str,frequencies),'ssid',ssid],timeout=5,check=False)
-        profile='picasso-auto-'+ssid
-        for key,value in [('802-11-wireless.ssid',ssid),('802-11-wireless.band',band),('802-11-wireless.hidden','yes'),('802-11-wireless.powersave','disable'),('802-11-wireless.cloned-mac-address','permanent'),('802-11-wireless-security.key-mgmt','wpa-psk'),('802-11-wireless-security.proto','rsn'),('802-11-wireless-security.pairwise','ccmp'),('802-11-wireless-security.group','ccmp'),('802-11-wireless-security.psk-flags','2'),('connection.autoconnect','no'),('connection.zone','drop'),('ipv4.method','auto'),('ipv6.method','disabled')]:
+        profile=self.rules.profile_name(self.cfg,ssid)
+        for key,value in [('802-11-wireless.ssid',ssid),('802-11-wireless.band',band),('802-11-wireless.hidden','yes'),('802-11-wireless.powersave','disable'),('802-11-wireless.cloned-mac-address','permanent'),('802-11-wireless-security.key-mgmt','wpa-psk'),('802-11-wireless-security.proto','rsn'),('802-11-wireless-security.pairwise','ccmp'),('802-11-wireless-security.group','ccmp'),('802-11-wireless-security.psk-flags','2'),('connection.autoconnect','no'),('connection.zone','drop'),('ipv4.method','auto'),('ipv6.method',self.network['ipv6_method']),('ipv6.may-fail','yes')]:
             require(self.text(['nmcli','-g',key,'connection','show',profile]).strip()==value,'Unsafe profile property '+key)
         self.cutoff=float(Path('/proc/uptime').read_text().split()[0]);start=time.monotonic()
         code,_=self.run(['nmcli','--wait',str(seconds),'connection','up','id',profile,'ifname','wlan0','passwd-file',str(CREDENTIALS/(ssid+'.passwd'))],timeout=seconds+4,check=False)
         self.record['attempts'].append({'ssid':ssid,'nmcli_returncode':code,'elapsed_seconds':round(time.monotonic()-start,3),'budget_seconds':seconds});self.save()
         return code==0
 
-    def disconnect(self,ssid):self.run(['nmcli','--wait','3','connection','down','picasso-auto-'+ssid],timeout=5,check=False)
+    def disconnect(self,ssid):self.run(['nmcli','--wait','3','connection','down',self.rules.profile_name(self.cfg,ssid)],timeout=5,check=False)
 
     def validate(self,ssid):
         self.identity();info=self.text(['iw','dev','wlan0','info']);require('width: 20 MHz' in info,'Actual width is not 20MHz')

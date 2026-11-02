@@ -1,0 +1,194 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: GPL-2.0-only
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export TERM=linux LC_ALL=C.UTF-8
+umask 077
+exec </dev/null 2>/dev/kmsg
+printf '<2>picasso-petitboot: STAGE pid1-entry\n' >/dev/kmsg
+/bin/busybox --install -s /bin
+BL=/sys/class/backlight/picasso-screen
+MODULE_OWNED=0
+UI_PID=
+DISCOVER_PID=
+LOG_PID=
+
+log() {
+    printf '<6>picasso-petitboot: %.768s\n' "$*" >/dev/kmsg
+    printf 'picasso-petitboot: %s\n' "$*" >>/run/petitboot/init.log
+}
+
+stop_child() {
+    [ -n "$1" ] || return 0
+    kill -TERM "$1" 2>/dev/null
+    wait "$1" 2>/dev/null
+}
+
+fail() {
+    log "FAILED: $*; transitions remain blocked; no automatic reboot"
+    if [ "$MODULE_OWNED" = 1 ]; then
+        printf '0\n' >"$BL/brightness" || log 'Backlight zero write failed'
+    fi
+    stop_child "$UI_PID"
+    stop_child "$DISCOVER_PID"
+    if [ "$MODULE_OWNED" = 1 ]; then
+        rmmod picasso_wled_service || log 'Module unload failed; kernel lease will fail off'
+    fi
+    for path in /run/petitboot/discover.log /run/petitboot/ui.log; do
+        [ -f "$path" ] || continue
+        tail -n 80 "$path" | while IFS= read -r line; do log "$path: $line"; done
+    done
+    while :; do sleep 60; done
+}
+
+mount -t proc proc /proc || exit 1
+mount -t sysfs sysfs /sys || exit 1
+mount -t devtmpfs devtmpfs /dev || exit 1
+mkdir -p /run /dev/pts
+mount -t tmpfs -o mode=0700 tmpfs /run || exit 1
+mkdir -p /run/petitboot
+/usr/libexec/picasso-petitboot/usb-log </dev/null >/dev/null 2>/dev/kmsg &
+LOG_PID=$!
+log 'STAGE pid1: RAM filesystems mounted; USB log relay started'
+dmesg -n 3 || fail 'Cannot lower console verbosity after log relay startup'
+mount -t devpts devpts /dev/pts || fail 'devpts mount'
+log 'RAM-only menu trial; no block storage, IP networking or radio stack'
+[ "$(uname -r)" = 7.3.1-picasso-petitboot2 ] || fail 'Kernel release mismatch'
+printf '1\n' >/proc/sys/kernel/kexec_load_disabled || fail 'Could not lock out kexec loading'
+read -r locked </proc/sys/kernel/kexec_load_disabled || fail 'Cannot read kexec lockout'
+[ "$locked" = 1 ] || fail 'kexec lockout not acknowledged'
+[ ! -e /sys/class/block ] || {
+    for node in /sys/class/block/*; do
+        [ ! -e "$node" ] || fail 'Unexpected block device'
+    done
+}
+for node in /sys/class/net/*; do
+    [ "${node##*/}" = lo ] || fail 'Unexpected network device'
+done
+for node in /sys/class/remoteproc/*; do
+    [ ! -e "$node" ] || fail 'Unexpected remote processor'
+done
+log 'STAGE isolation: kexec locked; no block, network or remoteproc devices'
+
+temperatures() {
+    PEAK=-10000
+    FOUND=0
+    for sensor in /sys/class/thermal/thermal_zone*/temp; do
+        [ -f "$sensor" ] || continue
+        read -r value <"$sensor" || return 1
+        case "$value" in ''|*[!0-9-]*|--*) return 1 ;; esac
+        [ "$value" -ge -10000 ] && [ "$value" -le 150000 ] || return 1
+        [ "$value" -le "$PEAK" ] || PEAK=$value
+        FOUND=1
+    done
+    [ "$FOUND" = 1 ]
+}
+
+# Retain the service's three cool samples without arming hardware.
+stable=0
+tries=0
+while [ "$stable" -lt 3 ]; do
+    kill -0 "$LOG_PID" 2>/dev/null || fail 'USB log relay exited'
+    temperatures || fail 'Missing/invalid thermal telemetry'
+    [ "$PEAK" -lt 55000 ] || fail 'Startup temperature reached 55C'
+    if [ "$PEAK" -lt 40000 ]; then stable=$((stable + 1)); else stable=0; fi
+    tries=$((tries + 1))
+    [ "$tries" -le 300 ] || fail 'Startup cooldown timed out'
+    sleep 1
+done
+log "STAGE cooling: three samples below 40C; peak=$PEAK"
+read -r active </sys/class/tty/tty0/active || fail 'Cannot read active VT'
+[ "$active" = tty1 ] || fail 'Active VT is not tty1'
+bound=0
+for node in /sys/class/vtconsole/vtcon*; do
+    read -r name <"$node/name" || fail 'Cannot read VT owner'
+    read -r binding <"$node/bind" || fail 'Cannot read VT binding'
+    case "$name:$binding" in *'frame buffer device'*:1) bound=$((bound + 1)) ;; esac
+done
+[ "$bound" = 1 ] || fail 'Expected one native fbcon owner'
+/usr/libexec/picasso-petitboot/console-check || fail 'Console/framebuffer mismatch'
+log 'STAGE console: active tty1 and native framebuffer verified'
+for node in /sys/class/backlight/*; do
+    [ ! -e "$node" ] || fail 'Existing backlight owner'
+done
+for name in picasso_wled_service picasso_wled_handoff picasso_wled_audit; do
+    [ ! -e "/sys/module/$name" ] || fail 'Existing display module'
+done
+
+set --
+up=0
+down=0
+power=0
+for event in /sys/class/input/event*; do
+    read -r name <"$event/device/name" || fail 'Cannot read input identity'
+    case "$name" in
+        gpio-keys) up=$((up + 1)) ;;
+        picasso_resin_input) down=$((down + 1)) ;;
+        picasso_pwrkey_input) power=$((power + 1)) ;;
+        *) continue ;;
+    esac
+    set -- "$@" --input-event "/dev/input/${event##*/}"
+done
+[ "$up:$down:$power" = 1:1:1 ] || fail 'Expected one volume-up, volume-down and power input'
+log 'STAGE inputs: expected phone input devices found'
+
+insmod /usr/libexec/picasso-petitboot/picasso-wled-service.ko confirm_service=1 ||
+    fail 'Audited WLED module rejected this hardware/configuration'
+MODULE_OWNED=1
+read -r lease_state <"$BL/lease_state" || fail 'Cannot read lease state'
+case "$lease_state" in "owner_pid=$$ expired=0 "*) ;; *) fail 'Wrong lease owner/state' ;; esac
+read -r actual <"$BL/actual_brightness" || fail 'Cannot read initial brightness'
+[ "$actual" = 0 ] || fail 'Backlight module did not start off'
+read -r max <"$BL/max_brightness" || fail 'Cannot read brightness limit'
+[ "$max" = 256 ] || fail 'Unexpected brightness range'
+log 'STAGE display: leased WLED module owns zero-brightness backlight'
+
+tick() {
+    temperatures || fail 'Missing/invalid runtime thermal telemetry'
+    [ "$PEAK" -lt 45000 ] || fail '45C runtime thermal abort'
+    printf 'LIVE\n' >"$BL/lease" || fail 'Backlight lease renewal failed'
+    read -r config <"$BL/boot_config_verified" || fail 'Electrical configuration check failed'
+    [ "$config" = 'usid=5 ctrl=d800 sink=d900 strings=7 current_ua=22500 ovp_mv=28000 boost_ma=1400 hardware_max=4095 trial_max=256' ] ||
+        fail 'Unexpected WLED electrical configuration'
+    read -r actual <"$BL/actual_brightness" || fail 'Cannot read actual brightness'
+    [ "$actual" = "$expected" ] || fail 'Unexpected actual backlight'
+}
+
+expected=0
+tick
+printf '4\n' >/sys/class/graphics/fb0/blank || fail 'fbcon blank'
+read -r blank </sys/class/graphics/fb0/blank || fail 'Cannot read fbcon blank state'
+case "$blank" in 1|4) ;; *) fail 'fbcon blank not acknowledged' ;; esac
+tick
+printf '0\n' >/sys/class/graphics/fb0/blank || fail 'fbcon unblank'
+read -r blank </sys/class/graphics/fb0/blank || fail 'Cannot read fbcon unblank state'
+[ "$blank" = 0 ] || fail 'fbcon unblank not acknowledged'
+tick
+printf '64\n' >"$BL/brightness" || fail 'Low brightness rejected'
+expected=64
+tick
+log 'STAGE display: blank/unblank verified and guarded low brightness set'
+/usr/sbin/pb-discover --local-only --log /run/petitboot/discover.log &
+DISCOVER_PID=$!
+for attempt in 1 2 3 4; do
+    [ -S /tmp/petitboot.ev ] && break
+    tick
+    sleep 0.25
+done
+[ -S /tmp/petitboot.ev ] || fail 'Local discovery did not become ready'
+log 'STAGE discovery: local socket ready'
+/usr/sbin/pb-event url@local url=file:///etc/petitboot/menu.conf ||
+    fail 'Local menu injection failed'
+setsid /usr/sbin/petitboot-nc --menu-only --log /run/petitboot/ui.log "$@" \
+    </dev/tty1 >/dev/tty1 2>>/run/petitboot/ui.log &
+UI_PID=$!
+log 'Menu-only trial: volume up/down, short power release; kexec blocked; 120-second limit'
+cycles=0
+while [ "$cycles" -lt 240 ]; do
+    kill -0 "$LOG_PID" 2>/dev/null || fail 'USB log relay exited'
+    kill -0 "$DISCOVER_PID" 2>/dev/null || fail 'Discovery exited'
+    kill -0 "$UI_PID" 2>/dev/null || fail 'Menu exited or rejected physical inputs'
+    tick
+    cycles=$((cycles + 1))
+    sleep 0.5
+done
+fail 'Menu trial window ended'

@@ -1,0 +1,14 @@
+{
+  "petitboot": {
+    "version": "1.15",
+    "repository": "https://github.com/open-power/petitboot.git",
+    "tag": "v1.15",
+    "commit": "695b1d97d09c6c73bfbc8008d79415333e3a3aa1"
+  },
+  "kexec-tools": {
+    "version": "2.0.32",
+    "repository": "https://github.com/horms/kexec-tools.git",
+    "tag": "v2.0.32",
+    "commit": "15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c"
+  }
+}

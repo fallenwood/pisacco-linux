@@ -8,6 +8,19 @@ policy=importlib.util.module_from_spec(spec);spec.loader.exec_module(policy)
 
 
 class WifiFallbackPolicyTests(unittest.TestCase):
+    def test_ipv6_opt_in_uses_separate_profiles_and_preserves_legacy_default(self):
+        ssid=policy.TARGETS[0][0]
+        self.assertEqual(policy.network_policy({})['ipv6_method'],'disabled')
+        self.assertEqual(policy.network_policy({'ipv6_auto':True})['ipv6_method'],'auto')
+        self.assertEqual(policy.profile_name({'ipv6_auto':True},ssid),
+                         policy.profile_name({},ssid)+'-ipv6')
+
+    def test_invalid_ipv6_policy_and_unapproved_profiles_refused(self):
+        for value in ('true',1,None):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                policy.network_policy({'ipv6_auto':value})
+        with self.assertRaises(ValueError):policy.profile_name({'ipv6_auto':True},'fixture-unapproved')
+
     def test_exact_authorized_order_and_bands(self):
         self.assertEqual(policy.TARGETS,(('Chaldea','a',20),('Chaldea-2.4G','bg',25)))
 

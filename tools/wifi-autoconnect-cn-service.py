@@ -10,7 +10,7 @@ import sys
 
 ROOT = Path('/opt/picasso-wifi-autoconnect-cn')
 SOURCE = Path('/opt/picasso-wifi-cn-raw/wifi-cn-raw-radio-service.py')
-SOURCE_SHA = 'bc9e26944031b6fa0f14b1209a2f4ef18adbfbe56e2d30d64bcd0ee1eb9057c2'
+SOURCE_SHA = '317615bf70725858f34385dc0638e5faa891ff2d4fdd511a5c79411301bed696'
 
 
 def require(ok, message):

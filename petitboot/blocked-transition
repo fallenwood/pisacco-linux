@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+printf '%s\n' 'Petitboot transition blocked: native kexec/RF cleanup is not validated or authorized.' >&2
+exit 125

@@ -15,7 +15,7 @@ import sys
 
 ROOT=Path('/opt/picasso-wifi-cn')
 RADIO=Path('/opt/picasso-wifi-radio/wifi-radio-service.py')
-RADIO_SHA='a1d1e5e71e535cb2980695ad6e91d9276d477ab6d191fbd1817dd32520e5ffe5'
+RADIO_SHA='c8a1bc12c084e9cff52aa33598d0139e04b72ac495f51096bc95c3bcbbbdfaa7'
 
 
 def require(ok,message):

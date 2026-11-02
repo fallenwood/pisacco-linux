@@ -16,6 +16,20 @@ START_MC=40000
 ABORT_MC=45000
 
 
+def network_policy(cfg):
+    enabled=cfg.get('ipv6_auto',False)
+    if type(enabled) is not bool:
+        raise ValueError('IPv6 opt-in must be boolean')
+    return {'ipv6_method':'auto' if enabled else 'disabled',
+            'profile_suffix':'-ipv6' if enabled else ''}
+
+
+def profile_name(cfg,ssid):
+    if ssid not in {target[0] for target in TARGETS}:
+        raise ValueError('Unapproved network profile target')
+    return 'picasso-auto-'+ssid+network_policy(cfg)['profile_suffix']
+
+
 def derive_both(passphrase):
     raw=passphrase.encode('utf-8')
     if not 8<=len(raw)<=63 or any(c in passphrase for c in '\r\n\0'):

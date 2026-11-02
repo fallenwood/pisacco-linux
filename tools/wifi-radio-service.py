@@ -14,7 +14,7 @@ import signal
 import sys
 
 SOURCE=Path('/opt/picasso-wifi/wifi-auto-service.py')
-SOURCE_SHA='428495f9e7007d9728b0df9887b630c62013622b9137af39d4afcf532191b725'
+SOURCE_SHA='a5000fef3c7f4641e917dbb206a4993861ccd46eb56b649c7e748630a5b99c96'
 NAMES=('Chaldea','Chaldea-2.4G')
 
 

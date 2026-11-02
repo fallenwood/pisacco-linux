@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "../dts/sm7250-xiaomi-picasso-power-trial.dts"
+
+&spmi_bus {
+	pmic@0 {
+		pon@800 {
+			pwrkey {
+				compatible = "xiaomi,picasso-pwrkey-input";
+				/delete-property/ debounce;
+				/delete-property/ bias-pull-up;
+			};
+
+			resin {
+				compatible = "xiaomi,picasso-resin-input";
+				interrupts = <0 8 1 IRQ_TYPE_EDGE_BOTH>;
+				linux,code = <KEY_VOLUMEDOWN>;
+			};
+		};
+	};
+};

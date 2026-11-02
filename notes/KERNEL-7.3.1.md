@@ -13,6 +13,23 @@
 恢复材料仍保留。当前只授权屏幕与持续 Wi-Fi，7.3.1 电源服务禁用；
 这不是充电、整机温控或长期稳定性验收。详细过程见本语言部分的“后续阶段”。
 下面此前的候选、拒绝授权和恢复记录均保留为历史快照，不代表当前服务状态。
+此后一次手动 Wi-Fi 切换停在取密阶段，重启后被未收尾且变化的 NV 工作状态拦住；
+经新授权保留副本、恢复普通工作文件后，2.4 GHz 与 LAN SSH 已恢复。见
+[后续 Wi-Fi 切换恢复](WIFI-SWITCH-RECOVERY.md)；5 GHz 仍未解决，本轮没有新增重启验收。
+再后的同启动 IPv6 部署采用隔离双栈 profile 和新原生证明，公网 IPv6 HTTPS、
+IPv4 与 LAN SSH 已通过；入站限制和旧救援配置保持不变。见
+[Wi-Fi IPv6](WIFI-IPV6.md)，该变更没有新增重启/自启动验收。
+随后按新授权把现有 Wi-Fi、USB 和默认防火墙区域设为 ACCEPT，放行所有端口连接，
+保留 firewalld 内建检查与同一 RF 所有者/证明；见
+[防火墙开放策略](FIREWALL-OPEN.md)。此前入站限制属于历史阶段，未新增重启验收。
+再后的[路由器国家码更新](WIFI-ROUTER-COUNTRY.md)已部署但未验收：
+5 GHz 连接超时、2.4 GHz 宣告 CN，与审阅的 US 不一致。
+用户选择统一路由器为 US 后暂缓调整；RF 安全关闭，新持续 Wi-Fi 授权未启用，
+旧证明未复用。默认内核及救援未变。
+2026-11-02 新授权选择[固定 CN](WIFI-FIXED-CN.md)，取代等待统一路由器 US：
+两个批准频段都请求 CN，新的原生 45 秒证明及独立清理通过，2.4 GHz 持续运行、
+同 SSID 重关联和双栈非 USB LAN SSH 已恢复。5 GHz 仍连接超时；
+没有新增重启/冷启动验收，默认内核与救援保持不变。
 
 ### 上一恢复阶段：默认仍为 6.18（历史快照）
 
@@ -391,6 +408,29 @@ Only screen and continuous Wi-Fi are authorized; the 7.3.1 power service is
 disabled. This is not charging, whole-device thermal or endurance qualification.
 See the subsequent-phase section below. Earlier candidate, declined-consent and
 recovery records remain historical snapshots, not current service state.
+A later manual Wi-Fi switch stalled during secret acquisition; after reboot,
+unclean, changed ordinary NV work state blocked startup. Newly authorized
+preservation/restoration recovered 2.4 GHz and LAN SSH; see
+[subsequent Wi-Fi switch recovery](WIFI-SWITCH-RECOVERY.md). 5 GHz remains
+unresolved, and this round did not add reboot acceptance.
+A subsequent same-boot IPv6 deployment uses isolated dual-stack profiles and a
+fresh native proof; public IPv6 HTTPS, IPv4 and LAN SSH passed while inbound
+restrictions and legacy rescue configuration were retained. See
+[Wi-Fi IPv6](WIFI-IPV6.md); this change has no new reboot/autostart acceptance.
+A later grant set the existing Wi-Fi, USB and default firewall zones to ACCEPT,
+allowing all port connections while retaining built-in checks and the same RF
+owner/proof; see [the open firewall policy](FIREWALL-OPEN.md). Earlier inbound
+restrictions are historical; no new reboot acceptance was performed.
+The later [router country update](WIFI-ROUTER-COUNTRY.md) is deployed but
+unaccepted: 5 GHz connection timed out and 2.4 GHz advertised CN, conflicting
+with reviewed US. The user chose consistent router US configuration, then
+deferred it. RF is safely off, new continuous-Wi-Fi consent is not enabled and
+old proof was not reused. Default and rescue kernels are unchanged.
+A fresh 2026-11-02 grant selected [fixed CN](WIFI-FIXED-CN.md), superseding the
+wait for consistent router US. Both authorized bands request CN. New native
+45-second proof and independent cleanup passed; continuous 2.4 GHz, same-SSID
+reassociation and dual-stack non-USB LAN SSH were restored. 5 GHz still times
+out. No new reboot/cold-start acceptance occurred; default and rescue are unchanged.
 
 ### Previous recovery phase: 6.18 default (historical snapshot)
 

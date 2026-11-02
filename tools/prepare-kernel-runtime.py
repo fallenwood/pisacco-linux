@@ -4,6 +4,7 @@
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -71,6 +72,8 @@ def main():
     parser.add_argument('--cn-policy', type=Path, required=True)
     parser.add_argument('--raw-policy', type=Path, required=True)
     parser.add_argument('--cn-reference', type=Path, required=True)
+    parser.add_argument('--router-policy', type=Path)
+    parser.add_argument('--router-reference', type=Path)
     args = parser.parse_args()
     profile = select_profile(ROOT)
     if profile.version != '7.3.1':
@@ -93,6 +96,24 @@ def main():
             or cn_policy['reference_sha256'] != reference_sha
             or raw_policy['CN_reference_sha256'] != reference_sha):
         raise ValueError('Historical CN policy/reference binding differs; review before porting')
+    if (args.router_policy is None) != (args.router_reference is None):
+        raise ValueError('Router policy and isolated signed-kernel reference must be supplied together')
+    router_policy = None
+    if args.router_policy is not None:
+        router_policy = json.loads(args.router_policy.read_text())
+        router_reference = args.router_reference.read_text()
+        spec = importlib.util.spec_from_file_location('reviewed_router_country', ROOT / 'tools/wifi-router-country.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.validate_policy(router_policy, router_reference)
+        if router_policy.get('reference_sha256') != hashlib.sha256(router_reference.encode()).hexdigest():
+            raise ValueError('Router reference provenance binding differs')
+        regdb = router_policy.get('regdb_sha256', {})
+        if (not isinstance(regdb, dict)
+                or set(regdb) != {'/usr/lib/firmware/regulatory.db', '/usr/lib/firmware/regulatory.db.p7s'}
+                or any(not isinstance(value, str) or re.fullmatch(r'[0-9a-f]{64}', value) is None
+                       for value in regdb.values())):
+            raise ValueError('Reviewed signed regulatory database hashes required')
     bindings = (
         ('wifi-radio-service.py', 'wifi-auto-service.py', 'SOURCE_SHA'),
         ('wifi-cn-radio-service.py', 'wifi-radio-service.py', 'RADIO_SHA'),
@@ -166,6 +187,9 @@ def main():
     for name in ('wifi-nl80211-channels.py', 'audit-wifi-regulatory-cn-raw.py',
                  'wifi-cn-raw-radio-service.py'):
         script(name, 'picasso-wifi-cn-raw')
+    if router_policy is not None:
+        script('wifi-router-country.py', 'picasso-wifi-cn-raw')
+        write(prefix / 'picasso-wifi-cn-raw/regulatory-router-reference.txt', router_reference)
     script('wifi-autoconnect-cn-service.py', 'picasso-wifi-autoconnect-cn')
     script('wifi-kernel-probation.py', 'picasso-wifi-autoconnect-cn')
     for name in ('screen-console.py', 'screen-volume-policy.py', 'screen-service.py'):
@@ -184,7 +208,12 @@ def main():
     cfg = json.loads(json.dumps(original_config))
     cfg.update(config_sha256=build['config_sha256'], fdt_sha256=build['fdt_sha256'],
                observer_module=str(prefix / 'modules/ath10k_core.ko'),
-               snoc_module=str(prefix / 'modules/ath10k_snoc.ko'), probation_seconds=0)
+               snoc_module=str(prefix / 'modules/ath10k_snoc.ko'), probation_seconds=0,
+               ipv6_auto=True)
+    if router_policy is not None:
+        cfg['router_country'] = router_policy['country']
+    else:
+        cfg.pop('router_country', None)
     baseline = out / 'modules/lib/modules' / release / 'kernel/drivers/net/wireless/ath/ath10k/ath10k_core.ko'
     cfg.update(installed_core_path='/lib/modules/' + release +
                '/kernel/drivers/net/wireless/ath/ath10k/ath10k_core.ko',
@@ -218,6 +247,15 @@ def main():
         name: digest(private / 'picasso-wifi-cn-raw' / name)
         for name in ('wifi-nl80211-channels.py', 'audit-wifi-regulatory-cn-raw.py')
     }
+    if router_policy is not None:
+        raw_policy['router_country_policy'] = router_policy
+        raw_policy['file_sha256'].update({
+            name: digest(private / 'picasso-wifi-cn-raw' / name)
+            for name in ('wifi-router-country.py', 'regulatory-router-reference.txt')
+        })
+        shared.update(router_policy['regdb_sha256'])
+    else:
+        raw_policy.pop('router_country_policy', None)
     write_json(prefix / 'picasso-wifi-cn-raw/policy.json', raw_policy)
     controller = private / 'picasso-wifi-autoconnect-cn/wifi-autoconnect-cn-service.py'
     controller_tree = ast.parse(controller.read_text())

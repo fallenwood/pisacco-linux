@@ -1,0 +1,969 @@
+diff --git a/discover/device-handler.c b/discover/device-handler.c
+index 0404820..9af487a 100644
+--- a/discover/device-handler.c
++++ b/discover/device-handler.c
+@@ -70,6 +70,7 @@ struct crypt_info {
+ struct device_handler {
+ 	struct discover_server	*server;
+ 	int			dry_run;
++	bool			local_only;
+ 
+ 	struct pb_udev		*udev;
+ 	struct network		*network;
+@@ -392,7 +393,7 @@ static void set_env_variables(const struct config *config)
+ }
+ 
+ struct device_handler *device_handler_init(struct discover_server *server,
+-		struct waitset *waitset, int dry_run)
++		struct waitset *waitset, int dry_run, bool local_only)
+ {
+ 	struct device_handler *handler;
+ 	int rc;
+@@ -401,7 +402,9 @@ struct device_handler *device_handler_init(struct discover_server *server,
+ 	handler->server = server;
+ 	handler->waitset = waitset;
+ 	handler->dry_run = dry_run;
+-	handler->autoboot_enabled = config_autoboot_active(config_get());
++	handler->local_only = local_only;
++	handler->autoboot_enabled = !local_only &&
++		config_autoboot_active(config_get());
+ 
+ 	list_init(&handler->unresolved_boot_options);
+ 
+@@ -497,7 +500,8 @@ void device_handler_reinit(struct device_handler *handler)
+ 	}
+ 
+ 	/* Force rediscovery on SCSI devices */
+-	process_run_simple(handler, pb_system_apps.scsi_rescan, NULL);
++	if (!handler->local_only)
++		process_run_simple(handler, pb_system_apps.scsi_rescan, NULL);
+ 
+ 	device_handler_reinit_sources(handler);
+ }
+@@ -541,7 +545,7 @@ void device_handler_remove(struct device_handler *handler,
+ 
+ 	/* if this is a network device, we have to unregister it from the
+ 	 * network code */
+-	if (device->device->type == DEVICE_TYPE_NETWORK)
++	if (handler->network && device->device->type == DEVICE_TYPE_NETWORK)
+ 		network_unregister_device(handler->network, device);
+ 
+ 	handler->n_devices--;
+@@ -1175,7 +1179,7 @@ void device_handler_add_device(struct device_handler *handler,
+ 				struct discover_device *, handler->n_devices);
+ 	handler->devices[handler->n_devices - 1] = device;
+ 
+-	if (device->device->type == DEVICE_TYPE_NETWORK)
++	if (handler->network && device->device->type == DEVICE_TYPE_NETWORK)
+ 		network_register_device(handler->network, device);
+ }
+ 
+@@ -1477,7 +1481,8 @@ static int device_handler_requery_timeout_fn(void *data)
+ 	discover_server_notify_device_remove(handler->server, device->device);
+ 	device->notified = false;
+ 
+-	network_requery_device(handler->network, device);
++	if (handler->network)
++		network_requery_device(handler->network, device);
+ 
+ 	return 0;
+ }
+@@ -1820,6 +1825,14 @@ void device_handler_process_url(struct device_handler *handler,
+ 		return;
+ 	}
+ 
++	if (handler->local_only && (pb_url->scheme != pb_url_file ||
++				url[strlen(url) - 1] == '/')) {
++		device_handler_status_err(handler,
++				"Local-only mode requires a local config file");
++		talloc_free(event);
++		return;
++	}
++
+ 	if (url[strlen(url) - 1] == '/') {
+ 		event_set_param(event, "pxepathprefix", url);
+ 		event_set_param(event, "mac", mac);
+@@ -1932,9 +1945,12 @@ void device_handler_discover_context_commit(struct device_handler *handler,
+ 		struct discover_context *ctx)
+ {
+ 	struct discover_device *dev = ctx->device;
++	struct discover_device *known;
+ 	struct discover_boot_option *opt, *tmp;
+ 
+-	if (!device_lookup_by_uuid(handler, dev->uuid))
++	known = dev->uuid ? device_lookup_by_uuid(handler, dev->uuid) :
++		device_lookup_by_id(handler, dev->device->id);
++	if (!known)
+ 		device_handler_add_device(handler, dev);
+ 
+ 	/* move boot options from the context to the device */
+@@ -2026,6 +2042,11 @@ static int device_handler_init_sources(struct device_handler *handler)
+ 	if (!handler->user_event)
+ 		return -1;
+ 
++	if (handler->local_only) {
++		pb_log("Local-only mode: block/network discovery disabled\n");
++		return 0;
++	}
++
+ 	handler->network = network_init(handler, handler->waitset,
+ 			handler->dry_run);
+ 	if (!handler->network)
+@@ -2040,6 +2061,14 @@ static int device_handler_init_sources(struct device_handler *handler)
+ 
+ static void device_handler_reinit_sources(struct device_handler *handler)
+ {
++	if (handler->local_only) {
++		if (!handler->user_event &&
++				device_handler_init_sources(handler))
++			device_handler_status_err(handler,
++					"Failed to initialize local events");
++		return;
++	}
++
+ 	/* if we haven't initialised sources previously (becuase we started in
+ 	 * safe mode), then init once here. */
+ 	if (!(handler->udev || handler->network || handler->user_event)) {
+diff --git a/discover/device-handler.h b/discover/device-handler.h
+index 216d17b..6d269a8 100644
+--- a/discover/device-handler.h
++++ b/discover/device-handler.h
+@@ -79,7 +79,7 @@ struct ramdisk_device {
+ };
+ 
+ struct device_handler *device_handler_init(struct discover_server *server,
+-		struct waitset *waitset, int dry_run);
++		struct waitset *waitset, int dry_run, bool local_only);
+ 
+ void device_handler_destroy(struct device_handler *devices);
+ 
+diff --git a/discover/event.c b/discover/event.c
+index 4c46d41..4113a43 100644
+--- a/discover/event.c
++++ b/discover/event.c
+@@ -81,7 +81,7 @@ static void event_parse_params(struct event *event, const char *buf, int len)
+ {
+ 	int param_len, name_len, value_len;
+ 	struct event_param *param;
+-	char *sep;
++	const char *sep;
+ 
+ 	for (; len > 0; len -= param_len + 1, buf += param_len + 1) {
+ 
+diff --git a/discover/grub2/grub2.c b/discover/grub2/grub2.c
+index 9be94eb..4c3b8dc 100644
+--- a/discover/grub2/grub2.c
++++ b/discover/grub2/grub2.c
+@@ -120,7 +120,7 @@ struct grub2_file *grub2_parse_file(struct grub2_script *script,
+ {
+ 	struct grub2_file *file;
+ 	size_t dev_len;
+-	char *pos;
++	const char *pos;
+ 
+ 	if (!str)
+ 		return NULL;
+diff --git a/discover/grub2/script.c b/discover/grub2/script.c
+index 14931f9..3324d90 100644
+--- a/discover/grub2/script.c
++++ b/discover/grub2/script.c
+@@ -432,7 +432,8 @@ int statement_for_execute(struct grub2_script *script,
+ static void init_env(struct grub2_script *script)
+ {
+ 	struct env_entry *env;
+-	char *prefix, *sep;
++	char *prefix;
++	const char *sep;
+ 
+ 	list_init(&script->environment);
+ 
+@@ -526,4 +527,3 @@ struct grub2_script *create_script(struct grub2_parser *parser,
+ 
+ 	return script;
+ }
+-
+diff --git a/discover/pb-discover.c b/discover/pb-discover.c
+index e2b36dd..ea4e2ab 100644
+--- a/discover/pb-discover.c
++++ b/discover/pb-discover.c
+@@ -31,7 +31,7 @@ static void print_usage(void)
+ 	print_version();
+ 	printf(
+ "Usage: pb-discover [-a, --no-autoboot] [-h, --help] [-l, --log log-file]\n"
+-"                   [-n, --dry-run] [-v, --verbose] [-V, --version]\n");
++"                   [-n, --dry-run] [--local-only] [-v, --verbose] [-V, --version]\n");
+ }
+ 
+ /**
+@@ -49,6 +49,7 @@ struct opts {
+ 	enum opt_value show_help;
+ 	const char *log_file;
+ 	enum opt_value dry_run;
++	enum opt_value local_only;
+ 	enum opt_value show_version;
+ 	enum opt_value verbose;
+ };
+@@ -64,11 +65,12 @@ static int opts_parse(struct opts *opts, int argc, char *argv[])
+ 		{"help",           no_argument,       NULL, 'h'},
+ 		{"log",            required_argument, NULL, 'l'},
+ 		{"dry-run",        no_argument,       NULL, 'n'},
++		{"local-only",     no_argument,       NULL, 'L'},
+ 		{"verbose",        no_argument,       NULL, 'v'},
+ 		{"version",        no_argument,       NULL, 'V'},
+ 		{ NULL, 0, NULL, 0},
+ 	};
+-	static const char short_options[] = "ahl:nvV";
++	static const char short_options[] = "ahl:nLvV";
+ 	static const struct opts default_values = {
+ 		.no_autoboot = opt_no,
+ 		.log_file = "/var/log/petitboot/pb-discover.log",
+@@ -98,6 +100,9 @@ static int opts_parse(struct opts *opts, int argc, char *argv[])
+ 		case 'n':
+ 			opts->dry_run = opt_yes;
+ 			break;
++		case 'L':
++			opts->local_only = opt_yes;
++			break;
+ 		case 'v':
+ 			opts->verbose = opt_yes;
+ 			break;
+@@ -180,7 +185,7 @@ int main(int argc, char *argv[])
+ 		return EXIT_FAILURE;
+ 
+ 	platform_init(NULL);
+-	if (opts.no_autoboot == opt_yes)
++	if (opts.no_autoboot == opt_yes || opts.local_only == opt_yes)
+ 		config_set_autoboot(false);
+ 
+ 	if (config_get()->lang)
+@@ -194,7 +199,8 @@ int main(int argc, char *argv[])
+ 
+ 	system_info_init(server);
+ 
+-	handler = device_handler_init(server, waitset, opts.dry_run == opt_yes);
++	handler = device_handler_init(server, waitset, opts.dry_run == opt_yes,
++			opts.local_only == opt_yes);
+ 	if (!handler)
+ 		return EXIT_FAILURE;
+ 
+diff --git a/discover/resource.c b/discover/resource.c
+index c09c1c5..0ad13b0 100644
+--- a/discover/resource.c
++++ b/discover/resource.c
+@@ -50,7 +50,8 @@ struct resource *create_devpath_resource(struct discover_boot_option *opt,
+ 	const char *devpath)
+ {
+ 	struct devpath_resource_info *info;
+-	char *pos, *devstr, *path;
++	const char *pos;
++	char *devstr, *path;
+ 	struct resource *res;
+ 	struct pb_url *url;
+ 
+diff --git a/test/lib/Makefile.am b/test/lib/Makefile.am
+index 65991a5..ca38a99 100644
+--- a/test/lib/Makefile.am
++++ b/test/lib/Makefile.am
+@@ -26,6 +26,12 @@ lib_TESTS = \
+ 	test/lib/test-fold \
+ 	test/lib/test-efivar
+ 
++lib_TESTS += test/lib/test-phone-input
++test_lib_test_phone_input_SOURCES = \
++	test/lib/test-phone-input.c \
++	ui/ncurses/phone-input.c
++test_lib_test_phone_input_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)
++
+ if WITH_OPENSSL
+ lib_TESTS += \
+ 	test/lib/test-security-openssl-verify \
+diff --git a/test/lib/test-phone-input.c b/test/lib/test-phone-input.c
+new file mode 100644
+index 0000000..b9f4f71
+--- /dev/null
++++ b/test/lib/test-phone-input.c
+@@ -0,0 +1,52 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#include <assert.h>
++#include <errno.h>
++#include <linux/input.h>
++#include <unistd.h>
++
++#include "ui/ncurses/phone-input.h"
++
++int main(void)
++{
++	struct pb_phone_input input = { .opened_at = 1000000 };
++	int fds[2];
++
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 900000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 1100000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 1200000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 2, 1300000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 1400000) ==
++			PB_PHONE_CONFIRM);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 1500000) == 0);
++
++	input.down = input.blocked = 4;
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 1600000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 1700000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 1800000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 3000000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 3100000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 3110000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 1, 3200000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_POWER, 0, 3400000) ==
++			PB_PHONE_CONFIRM);
++
++	assert(pb_phone_event(&input, EV_KEY, KEY_VOLUMEUP, 1, 3500000) ==
++			PB_PHONE_UP);
++	assert(pb_phone_event(&input, EV_KEY, KEY_VOLUMEUP, 1, 3510000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_VOLUMEUP, 2, 3520000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_VOLUMEUP, 0, 3600000) == 0);
++	assert(pb_phone_event(&input, EV_KEY, KEY_VOLUMEDOWN, 1, 3700000) ==
++			PB_PHONE_DOWN);
++	assert(pb_phone_event(&input, EV_SYN, SYN_DROPPED, 0, 3800000) == -1);
++	assert(errno == EIO);
++
++	assert(pb_phone_open(&input, "/dev/null") == -1);
++	assert(pipe(fds) == 0);
++	input.fd = fds[0];
++	assert(write(fds[1], "x", 1) == 1);
++	assert(pb_phone_read(&input) == -1 && errno == EPROTO);
++	close(fds[1]);
++	assert(pb_phone_read(&input) == -1 && errno == ENODEV);
++	close(fds[0]);
++	return 0;
++}
+diff --git a/test/parser/Makefile.am b/test/parser/Makefile.am
+index cbfc8c9..56cd343 100644
+--- a/test/parser/Makefile.am
++++ b/test/parser/Makefile.am
+@@ -84,6 +84,7 @@ parser_TESTS = \
+ 	test/parser/test-pxe-ipxe-default \
+ 	test/parser/test-pxe-non-url-conf \
+ 	test/parser/test-pxe-local \
++	test/parser/test-pxe-local-dtb \
+ 	test/parser/test-pxe-ipappend \
+ 	test/parser/test-pxe-pathprefix-with-conf \
+ 	test/parser/test-pxe-non-url-pathprefix-with-conf \
+@@ -178,4 +179,3 @@ EXTRA_DIST += $(check_DATA) $(extract_config)
+ 
+ CLEANFILES += \
+ 	$(foreach f, $(TESTS), $(f).embedded-config.c $(f).embedded-config.o)
+-
+diff --git a/test/parser/test-pxe-local-dtb.c b/test/parser/test-pxe-local-dtb.c
+new file mode 100644
+index 0000000..f1f6a03
+--- /dev/null
++++ b/test/parser/test-pxe-local-dtb.c
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#include "parser-test.h"
++
++#if 0 /* PARSER_EMBEDDED_CONFIG */
++LABEL linux-new
++KERNEL file:///kernels/new/Image
++FDT file:///kernels/new/board.dtb
++APPEND console=tty0
++LABEL linux-rescue
++KERNEL file:///kernels/rescue/Image
++DTB file:///kernels/rescue/board.dtb
++APPEND console=tty0 rescue
++#endif
++
++void run_test(struct parser_test *test)
++{
++	struct discover_boot_option *opt;
++
++	test_read_conf_embedded_url(test, "file:///menu.conf");
++	test_set_event_source(test);
++	test_set_event_param(test->ctx->event, "pxeconffile", "file:///menu.conf");
++	test_run_parser(test, "pxe");
++	check_boot_option_count(test->ctx, 2);
++	opt = get_boot_option(test->ctx, 0);
++	check_name(opt, "linux-new");
++	check_resolved_url_resource(opt->boot_image, "file:///kernels/new/Image");
++	check_resolved_url_resource(opt->dtb, "file:///kernels/new/board.dtb");
++	check_args(opt, "console=tty0");
++	opt = get_boot_option(test->ctx, 1);
++	check_name(opt, "linux-rescue");
++	check_resolved_url_resource(opt->boot_image, "file:///kernels/rescue/Image");
++	check_resolved_url_resource(opt->dtb, "file:///kernels/rescue/board.dtb");
++	check_args(opt, "console=tty0 rescue");
++}
+diff --git a/test/parser/utils.c b/test/parser/utils.c
+index 2705b9a..c85c8d4 100644
+--- a/test/parser/utils.c
++++ b/test/parser/utils.c
+@@ -119,7 +119,7 @@ struct parser_test *test_init(void)
+ 
+ 	test = talloc_zero(NULL, struct parser_test);
+ 	platform_init(NULL);
+-	test->handler = device_handler_init(NULL, NULL, 0);
++	test->handler = device_handler_init(NULL, NULL, 0, false);
+ 	test->ctx = test_create_context(test);
+ 	list_init(&test->files);
+ 
+diff --git a/ui/ncurses/Makefile.am b/ui/ncurses/Makefile.am
+index cd525df..80e5a5b 100644
+--- a/ui/ncurses/Makefile.am
++++ b/ui/ncurses/Makefile.am
+@@ -28,6 +28,8 @@ ui_ncurses_libpbnc_la_SOURCES = \
+ 	ui/ncurses/console-codes.h \
+ 	ui/ncurses/nc-cui.c \
+ 	ui/ncurses/nc-cui.h \
++	ui/ncurses/phone-input.c \
++	ui/ncurses/phone-input.h \
+ 	ui/ncurses/nc-cui-help.c \
+ 	ui/ncurses/nc-boot-editor.c \
+ 	ui/ncurses/nc-boot-editor.h \
+diff --git a/ui/ncurses/generic-main.c b/ui/ncurses/generic-main.c
+index 096eb56..9753091 100644
+--- a/ui/ncurses/generic-main.c
++++ b/ui/ncurses/generic-main.c
+@@ -52,6 +52,8 @@ static void print_usage(void)
+ "%s: petitboot-nc [-h, --help] [-l, --log log-file] [-s, --start-daemon]\n"
+ "                    [-t, --timeout] [-v, --verbose] [-V, --version]\n",
+ 			_("Usage"));
++	printf("                    [--input-event /dev/input/eventN] (repeatable)\n");
++	printf("                    [--menu-only] (no auxiliary actions or stdin input)\n");
+ }
+ 
+ /**
+@@ -71,6 +73,9 @@ struct opts {
+ 	enum opt_value timeout;
+ 	enum opt_value verbose;
+ 	enum opt_value show_version;
++	const char *input_events[8];
++	unsigned int n_input_events;
++	bool menu_only;
+ };
+ 
+ /**
+@@ -86,9 +91,11 @@ static int opts_parse(struct opts *opts, int argc, char *argv[])
+ 		{"timeout",	 no_argument,	    NULL, 't'},
+ 		{"verbose",      no_argument,       NULL, 'v'},
+ 		{"version",      no_argument,       NULL, 'V'},
++		{"input-event",  required_argument, NULL, 'I'},
++		{"menu-only",    no_argument,       NULL, 'M'},
+ 		{ NULL,          0,                 NULL, 0},
+ 	};
+-	static const char short_options[] = "dhl:stvV";
++	static const char short_options[] = "dhl:stvVI:M";
+ 	static const struct opts default_values = { 0 };
+ 
+ 	*opts = default_values;
+@@ -101,6 +108,16 @@ static int opts_parse(struct opts *opts, int argc, char *argv[])
+ 			break;
+ 
+ 		switch (c) {
++		case 'M':
++			opts->menu_only = true;
++			break;
++		case 'I':
++			if (opts->n_input_events == 8) {
++				fprintf(stderr, "Too many input-event devices\n");
++				return -1;
++			}
++			opts->input_events[opts->n_input_events++] = optarg;
++			break;
+ 		case 'h':
+ 			opts->show_help = opt_yes;
+ 			break;
+@@ -249,11 +266,21 @@ int main(int argc, char *argv[])
+ 		return EXIT_FAILURE;
+ 	}
+ 
++	if (opts.menu_only)
++		cui_set_menu_only();
+ 	cui = cui_init(NULL, NULL, opts.start_daemon, opts.timeout);
+ 	if (!cui)
+ 		return EXIT_FAILURE;
+ 
++	if (opts.n_input_events && cui_add_input_events(cui,
++				opts.input_events, opts.n_input_events)) {
++		talloc_free(cui);
++		return EXIT_FAILURE;
++	}
++
+ 	cui_result = cui_run(cui);
++	if (cui->phone_input_failed)
++		cui_result = -1;
+ 
+ 	talloc_free(cui);
+ 
+diff --git a/ui/ncurses/nc-cui.c b/ui/ncurses/nc-cui.c
+index 66f34b6..4714f02 100644
+--- a/ui/ncurses/nc-cui.c
++++ b/ui/ncurses/nc-cui.c
+@@ -49,6 +49,7 @@
+ #include "nc-plugin.h"
+ #include "nc-auth.h"
+ #include "console-codes.h"
++#include "phone-input.h"
+ 
+ extern const struct help_text main_menu_help_text;
+ extern const struct help_text plugin_menu_help_text;
+@@ -56,6 +57,12 @@ extern const struct help_text plugin_menu_help_text;
+ static bool cui_detached = false;
+ 
+ static struct pmenu *main_menu_init(struct cui *cui);
++static bool menu_only;
++
++void cui_set_menu_only(void)
++{
++	menu_only = true;
++}
+ static struct pmenu *plugin_menu_init(struct cui *cui);
+ 
+ static void cui_cancel_autoboot_on_exit(struct cui *cui);
+@@ -169,7 +176,7 @@ static void cui_atexit(void)
+ 	refresh();
+ 	endwin();
+ 
+-	bool lockdown = lockdown_active();
++	bool lockdown = !menu_only && lockdown_active();
+ 
+ 	while (lockdown) {
+ 		sync();
+@@ -848,6 +855,9 @@ static int cui_process_key(void *arg)
+ 		if (c == ERR)
+ 			break;
+ 
++		if (menu_only && c != KEY_UP && c != KEY_DOWN && c != '\n')
++			continue;
++
+ 		if (c == 27) {
+ 			/*
+ 			 * If this is a console code sequence try to parse it
+@@ -917,6 +927,72 @@ static int cui_process_js(void *arg)
+ 	return 0;
+ }
+ 
++struct cui_phone_input {
++	struct cui *cui;
++	struct pb_phone_input input;
++	struct waiter *waiter;
++};
++
++static int cui_phone_input_destroy(void *arg)
++{
++	struct cui_phone_input *source = arg;
++
++	if (source->waiter)
++		waiter_remove(source->waiter);
++	close(source->input.fd);
++	return 0;
++}
++
++static int cui_process_phone_input(void *arg)
++{
++	struct cui_phone_input *source = arg;
++	int key = pb_phone_read(&source->input);
++
++	if (key < 0) {
++		pb_log("Phone input lost: %s; stopping menu\n", strerror(errno));
++		source->cui->phone_input_failed = true;
++		cui_abort(source->cui);
++		return 0;
++	}
++	if (key != PB_PHONE_NONE) {
++		ungetch(key == PB_PHONE_UP ? KEY_UP :
++			key == PB_PHONE_DOWN ? KEY_DOWN : '\n');
++		cui_process_key(source->cui);
++	}
++	return 0;
++}
++
++int cui_add_input_events(struct cui *cui, const char **paths, unsigned int count)
++{
++	unsigned int i, supported = 0;
++
++	for (i = 0; i < count; i++) {
++		struct cui_phone_input *source;
++
++		source = talloc_zero(cui, struct cui_phone_input);
++		if (!source)
++			return -1;
++		source->cui = cui;
++		if (pb_phone_open(&source->input, paths[i])) {
++			pb_log("Cannot open phone input %s: %s\n",
++					paths[i], strerror(errno));
++			talloc_free(source);
++			return -1;
++		}
++		talloc_set_destructor(source, cui_phone_input_destroy);
++		supported |= source->input.supported;
++		source->waiter = waiter_register_io(cui->waitset, source->input.fd,
++				WAIT_IN, cui_process_phone_input, source);
++		if (!source->waiter)
++			return -1;
++	}
++	if (supported != 7) {
++		pb_log("Phone menu requires volume up, volume down and power\n");
++		return -1;
++	}
++	return 0;
++}
++
+ /**
+  * cui_handle_resize - Handle the term resize.
+  */
+@@ -965,6 +1041,8 @@ static int cui_boot_option_add(struct device *dev, struct boot_option *opt,
+ 	char *name;
+ 
+ 	plugin_option = opt->type == DISCOVER_PLUGIN_OPTION;
++	if (menu_only && plugin_option)
++		return 0;
+ 	menu = plugin_option ? cui->plugin_menu : cui->main;
+ 
+ 	pb_debug("%s: %p %s\n", __func__, opt, opt->id);
+@@ -1373,6 +1451,9 @@ static int cui_plugin_option_add(struct plugin_option *opt, void *arg)
+ 	unsigned int i;
+ 	int result;
+ 
++	if (menu_only)
++		return 0;
++
+ fallback:
+ 	/* Find uninstalled plugin by matching on plugin_file */
+ 	for (i = 0; i < cui->plugin_menu->item_count; i++) {
+@@ -1656,7 +1737,8 @@ static struct pmenu *main_menu_init(struct cui *cui)
+ 	int result;
+ 	bool lockdown = lockdown_active();
+ 
+-	m = pmenu_init(cui, 9, lockdown ? cui_abort_on_exit : cui_on_exit);
++	m = pmenu_init(cui, menu_only ? 1 : 9,
++			lockdown ? cui_abort_on_exit : cui_on_exit);
+ 	if (!m) {
+ 		pb_log_fn("failed\n");
+ 		return NULL;
+@@ -1684,6 +1766,14 @@ static struct pmenu *main_menu_init(struct cui *cui)
+ 	item_opts_off(i->nci, O_SELECTABLE);
+ 	pmenu_item_insert(m, i, 0);
+ 
++	if (menu_only) {
++		talloc_free(m->scr.frame.help);
++		m->scr.frame.help = talloc_strdup(m,
++			"Volume up/down=select, short power release=confirm");
++		m->on_new = NULL;
++		goto setup;
++	}
++
+ 	/* add system items */
+ 	i = pmenu_item_create(m, _("System information"));
+ 	i->on_execute = menu_sysinfo_execute;
+@@ -1721,6 +1811,7 @@ static struct pmenu *main_menu_init(struct cui *cui)
+ 	i->on_execute = pmenu_exit_cb;
+ 	pmenu_item_insert(m, i, 8);
+ 
++setup:
+ 	result = pmenu_setup(m);
+ 
+ 	if (result) {
+@@ -1932,8 +2023,9 @@ retry_start:
+ 	if (!cui->plugin_menu)
+ 		goto fail_client_init;
+ 
+-	waiter_register_io(cui->waitset, STDIN_FILENO, WAIT_IN,
+-			cui_process_key, cui);
++	if (!menu_only)
++		waiter_register_io(cui->waitset, STDIN_FILENO, WAIT_IN,
++				cui_process_key, cui);
+ 
+ 	if (js_map) {
+ 
+@@ -1963,6 +2055,9 @@ static void cui_cancel_autoboot_on_exit(struct cui *cui)
+ {
+ 	pid_t pid;
+ 
++	if (menu_only && !cui->client)
++		return;
++
+ 	if (!cui->client) {
+ 		/* Fork a child to tell the server to cancel autoboot */
+ 		pid = fork();
+diff --git a/ui/ncurses/nc-cui.h b/ui/ncurses/nc-cui.h
+index 039aa92..a9a33b7 100644
+--- a/ui/ncurses/nc-cui.h
++++ b/ui/ncurses/nc-cui.h
+@@ -79,6 +79,7 @@ struct cui {
+ 	unsigned int default_item;
+ 	int (*on_boot)(struct cui *cui, struct cui_opt_data *cod);
+ 	bool preboot_mode;
++	bool phone_input_failed;
+ };
+ 
+ struct cui *cui_init(void* platform_info,
+@@ -86,6 +87,8 @@ struct cui *cui_init(void* platform_info,
+ 		int start_daemon, int timeout);
+ struct nc_scr *cui_set_current(struct cui *cui, struct nc_scr *scr);
+ int cui_run(struct cui *cui);
++int cui_add_input_events(struct cui *cui, const char **paths, unsigned int count);
++void cui_set_menu_only(void);
+ void cui_item_edit(struct pmenu_item *item);
+ void cui_item_new(struct pmenu *menu);
+ void cui_show_sysinfo(struct cui *cui);
+diff --git a/ui/ncurses/nc-menu.c b/ui/ncurses/nc-menu.c
+index a90a02e..a0de7af 100644
+--- a/ui/ncurses/nc-menu.c
++++ b/ui/ncurses/nc-menu.c
+@@ -131,7 +131,8 @@ static const char *pmenu_item_label(struct pmenu_item *item, const char *name)
+ int pmenu_item_update(struct pmenu_item *item, const char *name)
+ {
+ 	const char *label;
+-	ITEM *i;
++	ITEM *replacement;
++	unsigned int index;
+ 
+ 	if (!item || !item->nci)
+ 		return -1;
+@@ -141,9 +142,27 @@ int pmenu_item_update(struct pmenu_item *item, const char *name)
+ 	if (!label)
+ 		return -1;
+ 
+-	i = item->nci;
+-	i->name.str = label;
+-	i->name.length = strncols(label);
++	replacement = new_item(label, item_description(item->nci));
++	if (!replacement)
++		return -1;
++	if (set_item_opts(replacement, item_opts(item->nci)) != E_OK ||
++			set_item_userptr(replacement, item_userptr(item->nci)) != E_OK ||
++			set_item_value(replacement, item_value(item->nci)) != E_OK) {
++		free_item(replacement);
++		pb_log_fn("Failed to copy menu item attributes\n");
++		return -1;
++	}
++	for (index = 0; index < item->pmenu->item_count; index++)
++		if (item->pmenu->items[index] == item->nci)
++			break;
++	if (free_item(item->nci) != E_OK) {
++		free_item(replacement);
++		pb_log_fn("Menu item must be disconnected before relabeling\n");
++		return -1;
++	}
++	item->nci = replacement;
++	if (index < item->pmenu->item_count)
++		item->pmenu->items[index] = replacement;
+ 
+ 	return 0;
+ }
+@@ -358,7 +377,7 @@ static int pmenu_item_get_index(const struct pmenu_item *item)
+ 				return i;
+ 
+ 	pb_log_fn("not found: %p %s\n", item,
+-		(item ? item->nci->name.str : "(null)"));
++		(item ? item_name(item->nci) : "(null)"));
+ 	return -1;
+ }
+ 
+@@ -622,4 +641,3 @@ int pmenu_setup(struct pmenu *menu)
+ 
+ 	return 0;
+ }
+-
+diff --git a/ui/ncurses/nc-menu.h b/ui/ncurses/nc-menu.h
+index eb568c8..550c7e1 100644
+--- a/ui/ncurses/nc-menu.h
++++ b/ui/ncurses/nc-menu.h
+@@ -126,7 +126,7 @@ static inline struct pmenu *pmenu_from_scr(struct nc_scr *scr)
+ 
+ static inline void pmenu_dump_item(const ITEM *item)
+ {
+-	pb_debug("%p %s\n", item, (item ? item->name.str : "(null)"));
++	pb_debug("%p %s\n", item, (item ? item_name(item) : "(null)"));
+ }
+ 
+ static inline void pmenu_dump_items(ITEM *const *items, unsigned int count)
+@@ -135,7 +135,7 @@ static inline void pmenu_dump_items(ITEM *const *items, unsigned int count)
+ 
+ 	for (i = 0; i < count; i++)
+ 		pb_debug("%u: %p %s\n", i, items[i],
+-			(items[i] ? items[i]->name.str : "(null)"));
++			(items[i] ? item_name(items[i]) : "(null)"));
+ }
+ 
+ #endif
+diff --git a/ui/ncurses/phone-input.c b/ui/ncurses/phone-input.c
+new file mode 100644
+index 0000000..8337371
+--- /dev/null
++++ b/ui/ncurses/phone-input.c
+@@ -0,0 +1,141 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#define _GNU_SOURCE
++#include <errno.h>
++#include <fcntl.h>
++#include <linux/input.h>
++#include <string.h>
++#include <sys/ioctl.h>
++#include <sys/stat.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "phone-input.h"
++
++#define WORD_BITS (8 * sizeof(unsigned long))
++#define BIT_SET(bits, bit) ((bits)[(bit) / WORD_BITS] & \
++		(1UL << ((bit) % WORD_BITS)))
++
++static const unsigned int codes[] = {
++	KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_POWER,
++};
++
++int pb_phone_event(struct pb_phone_input *input, unsigned int type,
++		unsigned int code, int value, int64_t usec)
++{
++	unsigned int i, bit;
++	int64_t duration;
++
++	if (type == EV_SYN && code == SYN_DROPPED) {
++		errno = EIO;
++		return -1;
++	}
++	if (type != EV_KEY || usec < input->opened_at)
++		return PB_PHONE_NONE;
++	for (i = 0; i < sizeof(codes) / sizeof(codes[0]); i++)
++		if (code == codes[i])
++			break;
++	if (i == sizeof(codes) / sizeof(codes[0]) || value == 2)
++		return PB_PHONE_NONE;
++	if (value != 0 && value != 1) {
++		errno = EPROTO;
++		return -1;
++	}
++
++	bit = 1U << i;
++	if (value == 1) {
++		if ((input->down | input->blocked) & bit)
++			return PB_PHONE_NONE;
++		input->down |= bit;
++		if (code == KEY_POWER) {
++			input->power_pressed = usec;
++			return PB_PHONE_NONE;
++		}
++		return code == KEY_VOLUMEUP ? PB_PHONE_UP : PB_PHONE_DOWN;
++	}
++
++	if (!(input->down & bit) || (input->blocked & bit)) {
++		input->blocked &= ~bit;
++		input->down &= ~bit;
++		return PB_PHONE_NONE;
++	}
++	input->down &= ~bit;
++	if (code != KEY_POWER)
++		return PB_PHONE_NONE;
++
++	duration = usec - input->power_pressed;
++	return duration >= 50000 && duration <= 1000000 ?
++		PB_PHONE_CONFIRM : PB_PHONE_NONE;
++}
++
++int pb_phone_open(struct pb_phone_input *input, const char *path)
++{
++	unsigned long supported[(KEY_MAX + WORD_BITS) / WORD_BITS] = {0};
++	unsigned long held[(KEY_MAX + WORD_BITS) / WORD_BITS] = {0};
++	struct timespec now;
++	struct stat st;
++	unsigned int i;
++	int saved, clock_id = CLOCK_MONOTONIC;
++
++	memset(input, 0, sizeof(*input));
++	input->fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW);
++	if (input->fd < 0)
++		return -1;
++	if (fstat(input->fd, &st))
++		goto fail;
++	if (!S_ISCHR(st.st_mode)) {
++		errno = ENODEV;
++		goto fail;
++	}
++	if (ioctl(input->fd, EVIOCSCLOCKID, &clock_id) ||
++			ioctl(input->fd, EVIOCGBIT(EV_KEY, sizeof(supported)),
++				supported) < 0 ||
++			ioctl(input->fd, EVIOCGKEY(sizeof(held)), held) < 0 ||
++			clock_gettime(CLOCK_MONOTONIC, &now))
++		goto fail;
++	for (i = 0; i < sizeof(codes) / sizeof(codes[0]); i++) {
++		if (BIT_SET(supported, codes[i]))
++			input->supported |= 1U << i;
++		if (BIT_SET(held, codes[i]))
++			input->blocked |= 1U << i;
++	}
++	if (!input->supported) {
++		errno = ENODEV;
++		goto fail;
++	}
++	input->down = input->blocked;
++	input->opened_at = (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
++	return 0;
++
++fail:
++	saved = errno;
++	close(input->fd);
++	input->fd = -1;
++	errno = saved;
++	return -1;
++}
++
++int pb_phone_read(struct pb_phone_input *input)
++{
++	struct input_event event;
++	ssize_t n;
++	int key;
++
++	for (;;) {
++		n = read(input->fd, &event, sizeof(event));
++		if (n < 0) {
++			if (errno == EINTR)
++				continue;
++			if (errno == EAGAIN)
++				return PB_PHONE_NONE;
++			return -1;
++		}
++		if (n != sizeof(event)) {
++			errno = n == 0 ? ENODEV : EPROTO;
++			return -1;
++		}
++		key = pb_phone_event(input, event.type, event.code, event.value,
++			(int64_t)event.time.tv_sec * 1000000 + event.time.tv_usec);
++		if (key != PB_PHONE_NONE)
++			return key;
++	}
++}
+diff --git a/ui/ncurses/phone-input.h b/ui/ncurses/phone-input.h
+new file mode 100644
+index 0000000..f88719c
+--- /dev/null
++++ b/ui/ncurses/phone-input.h
+@@ -0,0 +1,28 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef PB_PHONE_INPUT_H
++#define PB_PHONE_INPUT_H
++
++#include <stdint.h>
++
++enum pb_phone_key {
++	PB_PHONE_NONE,
++	PB_PHONE_UP,
++	PB_PHONE_DOWN,
++	PB_PHONE_CONFIRM,
++};
++
++struct pb_phone_input {
++	int fd;
++	unsigned int supported;
++	unsigned int down;
++	unsigned int blocked;
++	int64_t power_pressed;
++	int64_t opened_at;
++};
++
++int pb_phone_open(struct pb_phone_input *input, const char *path);
++int pb_phone_read(struct pb_phone_input *input);
++int pb_phone_event(struct pb_phone_input *input, unsigned int type,
++		unsigned int code, int value, int64_t usec);
++
++#endif

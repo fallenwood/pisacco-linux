@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import stat
 import tempfile
 import threading
@@ -14,6 +15,39 @@ s=importlib.util.spec_from_file_location('wifi_auto',ROOT/'tools/wifi-auto-servi
 
 
 class WifiAutoTests(unittest.TestCase):
+ def test_ipv6_profile_policy_is_checked_before_activation_and_used_for_disconnect(self):
+  for name in ('wifi-auto-service','wifi-service'):
+   spec=importlib.util.spec_from_file_location('profile_worker',ROOT/'tools'/(name+'.py'))
+   worker=importlib.util.module_from_spec(spec);spec.loader.exec_module(worker)
+   rules_spec=importlib.util.spec_from_file_location('profile_rules',ROOT/'tools/wifi-fallback-policy.py')
+   rules=importlib.util.module_from_spec(rules_spec);rules_spec.loader.exec_module(rules)
+   for enabled,actual in ((False,'disabled'),(True,'auto'),(True,'disabled')):
+    with self.subTest(worker=name,enabled=enabled,actual=actual):
+     obj=worker.Service.__new__(worker.Service);obj.cfg={'ipv6_auto':enabled};obj.rules=rules;obj.network=rules.network_policy(obj.cfg)
+     obj.record={'attempts':[]};obj.identity=lambda:None;obj.audit=lambda **kw:None;obj.save=lambda:None;calls=[]
+     values={'802-11-wireless.ssid':worker.NAMES[0],'802-11-wireless.band':'a','802-11-wireless.hidden':'yes','802-11-wireless.powersave':'disable','802-11-wireless.cloned-mac-address':'permanent','802-11-wireless-security.key-mgmt':'wpa-psk','802-11-wireless-security.proto':'rsn','802-11-wireless-security.pairwise':'ccmp','802-11-wireless-security.group':'ccmp','802-11-wireless-security.psk-flags':'2','connection.autoconnect':'no','connection.zone':'drop','ipv4.method':'auto','ipv6.method':actual,'ipv6.may-fail':'yes'}
+     obj.text=lambda args:values[args[2]]
+     obj.run=lambda args,**kw:(calls.append(args) or (0,''))
+     if enabled and actual=='disabled':
+      with self.assertRaisesRegex(RuntimeError,'ipv6.method'):obj.activate(worker.NAMES[0],'a',20)
+      self.assertFalse(calls)
+     else:
+      self.assertTrue(obj.activate(worker.NAMES[0],'a',20))
+      profile=rules.profile_name(obj.cfg,worker.NAMES[0]);self.assertIn(profile,calls[0])
+      obj.disconnect(worker.NAMES[0]);self.assertEqual(calls[-1][-1],profile)
+ def test_shutdown_disarms_runtime_watchdog_in_actual_notification(self):
+  with tempfile.TemporaryDirectory() as d,socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as receiver:
+   address=str(Path(d)/'notify');receiver.bind(address);receiver.settimeout(1)
+   with patch.dict(A.os.environ,{'NOTIFY_SOCKET':address}):
+    A.notify('STOPPING=1\nSTATUS=Orderly guarded Wi-Fi cleanup')
+   self.assertEqual(receiver.recv(4096).decode().splitlines(),
+                    ['STOPPING=1','STATUS=Orderly guarded Wi-Fi cleanup','WATCHDOG_USEC=0'])
+ def test_runtime_notifications_do_not_disarm_watchdog(self):
+  with tempfile.TemporaryDirectory() as d,socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as receiver:
+   address=str(Path(d)/'notify');receiver.bind(address);receiver.settimeout(1)
+   with patch.dict(A.os.environ,{'NOTIFY_SOCKET':address}):
+    for message in ('READY=1','WATCHDOG=1','STATUS=not a STOPPING=1 tag'):
+     A.notify(message);self.assertEqual(receiver.recv(4096).decode(),message)
  def test_exact_two_preserved_topology_FDTs_only(self):
   for fdt in A.APPROVED_FDTS:A.approved_fdt(A.APPROVED_FDTS[0],fdt)
   for base,live in ((A.APPROVED_FDTS[1],A.APPROVED_FDTS[1]),(A.APPROVED_FDTS[0],'0'*64)):

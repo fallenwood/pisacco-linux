@@ -11,6 +11,23 @@
 后续 7.3.1 启动修复、重复首次射频/完整自启动验收，以及仅写 `boot` 后的
 默认启动与局域网 SSH 复核，见[内核升级记录](KERNEL-7.3.1.md)。
 默认现为 7.3.1，已验证的 6.18 救援镜像仍保留；早期试验与恢复记录不是当前状态。
+之后一次手动 Wi-Fi 切换、重启后的生命周期拒启与经授权恢复见
+[Wi-Fi 切换恢复](WIFI-SWITCH-RECOVERY.md)。已恢复 2.4 GHz；5 GHz 仍未解决，
+本轮未进行新增重启验收。
+之后在同一 7.3.1 启动上部署隔离的双栈 profile、新原生证明并验证公网 IPv6、
+IPv4 与 LAN SSH，见 [Wi-Fi IPv6](WIFI-IPV6.md)；IPv6 变更没有新增冷启动验收。
+再后按新授权把现有 Wi-Fi、USB 和默认区域设为 ACCEPT，放行所有连接但保留
+firewalld 内建检查；见[防火墙开放策略](FIREWALL-OPEN.md)。
+前述 IPv6 阶段“保留入站限制”不再是当前端口策略。
+之后 USB 只读诊断发现 5 GHz 重连收到 AP 的 US Country IE，导致 CN 守护拒绝并安全
+停机；第一次 AP 断开的原因仍未知。见 [5 GHz 断开诊断](WIFI-5GHZ-DISCONNECT.md)；
+当时 RF 已关闭，前述在线验收是历史快照。
+后续[路由器国家码策略](WIFI-ROUTER-COUNTRY.md)已部署但未验收；
+5 GHz 连接超时，2.4 GHz 实际宣告 CN，与审阅的 US 冲突。用户选择统一路由器为
+US 后暂缓调整，RF 继续安全关闭，没有启用新证明或持续 Wi-Fi。
+2026-11-02 新授权改为[固定 CN](WIFI-FIXED-CN.md)，不再等待 AP 统一 US：
+两个批准频段均请求 CN，2.4 GHz 新原生证明、持续运行、同 SSID 重关联和双栈
+非 USB LAN SSH 已通过；5 GHz 仍连接超时，没有新增冷启动或长期稳定性验收。
 
 English: This directory holds implementation, build, installation, configuration,
 diagnosis and validation details. Each note provides Chinese and English while
@@ -25,6 +42,28 @@ See [the kernel upgrade record](KERNEL-7.3.1.md) for the subsequent startup
 repair, repeated first-radio/full-autostart acceptance, and default boot/LAN SSH
 verification after writing only `boot`. The default is now 7.3.1; verified 6.18
 rescue images remain preserved. Earlier trial/recovery snapshots are not current state.
+See [Wi-Fi switch recovery](WIFI-SWITCH-RECOVERY.md) for a later manual switch,
+post-reboot lifecycle refusal and authorized recovery. 2.4 GHz was restored;
+5 GHz remains unresolved and no additional reboot acceptance was performed.
+See [Wi-Fi IPv6](WIFI-IPV6.md) for later isolated dual-stack profiles, fresh native
+proof and public IPv6/IPv4/LAN SSH acceptance on the same 7.3.1 boot; the IPv6
+change has no additional cold-start acceptance.
+A later explicit grant set the existing Wi-Fi, USB and default zones to ACCEPT,
+allowing all connections while retaining firewalld built-in checks; see
+[the open firewall policy](FIREWALL-OPEN.md). The earlier IPv6 stage's retained
+inbound restrictions are no longer the current port policy.
+A later read-only USB diagnosis found an AP US Country IE after 5 GHz reconnect,
+causing CN-guard refusal and safe shutdown; the first AP disconnection remains
+unexplained. See [5 GHz disconnect diagnosis](WIFI-5GHZ-DISCONNECT.md).
+RF was then off; the preceding online acceptances are historical snapshots.
+The later [router country policy](WIFI-ROUTER-COUNTRY.md) is deployed but
+unaccepted: 5 GHz connection timed out and 2.4 GHz advertised CN, conflicting
+with reviewed US. The user chose consistent router US configuration, then
+deferred it. RF remains safely off with no new proof or continuous Wi-Fi.
+A fresh 2026-11-02 grant selected [fixed CN](WIFI-FIXED-CN.md), superseding the
+wait for consistent AP US: both authorized bands request CN. New native proof,
+continuous 2.4 GHz, same-SSID reassociation and dual-stack non-USB LAN SSH passed.
+5 GHz still times out; no new cold-start or endurance acceptance was obtained.
 
 中文：除 Markdown 链接外，代码、命令与 `out/` 证据路径均相对于仓库根目录。
 `out/`、`downloads/` 和 `src/` 是被忽略的本地产物，不保证存在于新克隆中。
@@ -52,7 +91,7 @@ authorization boundaries retain their original historical meaning.
 
 | 占位符 / Placeholders | 含义 / Meaning |
 | --- | --- |
-| `${PHONE_LAN_IP}`, `${PHONE_USB_IP}`, `${HOST_USB_IP}`, `${LAN_SUBNET}` | 设备/主机地址及局域网范围 / Device/host addresses and LAN range |
+| `${PHONE_LAN_IP}`, `${PHONE_IPV6}`, `${PHONE_USB_IP}`, `${HOST_USB_IP}`, `${LAN_SUBNET}` | 设备/主机地址及局域网范围 / Device/host addresses and LAN range |
 | `${PRIMARY_SSID}`, `${FALLBACK_SSID}`, `${USB_HOST_MAC}`, `${HOST_USB_INTERFACE}` | 网络名称、主机 USB MAC 与网卡 / Network names, host USB MAC and interface |
 | `${DEVICE_USER}`, `${DEVICE_HOME}`, `${USER_HOME}`, `${REPO_ROOT}` | 本地账号及目录 / Local accounts and directories |
 | `${SSH_PRIVATE_KEY}`, `${SSH_PUBLIC_KEY}`, `${SSH_KNOWN_HOSTS}`, `${SSH_KEY_DIR}`, `${PRIVATE_BACKUP_DIR}`, `${ROM_ARCHIVE}` | 本地密钥、主机密钥记录、备份及归档路径 / Local key, known-hosts, backup and archive paths |
@@ -84,12 +123,14 @@ checking.
 | [OPT-CLEANUP.md](OPT-CLEANUP.md) | 手机 `/opt` 脚本保留/永久删除清单、依赖与在线复核 / Phone `/opt` retained/permanently deleted scripts, dependencies and live verification |
 | [SOURCES.md](SOURCES.md) | 来源、版本固定、上游差异与许可 / Provenance, version pins, upstream differences and licensing |
 | [KERNEL-7.3.1.md](KERNEL-7.3.1.md) | 7.3.1 启动修复、QRTR 握手、默认切换验收与 6.18 救援保留 / 7.3.1 startup/QRTR repair, accepted default switch and retained 6.18 rescue |
+| [PETITBOOT.md](PETITBOOT.md) | 首轮临时启动黑屏与默认恢复、离线 USB 日志候选、RF 停止 watchdog 修复；原生菜单/USB 日志未验收 / First black-screen trial/default recovery, offline USB log candidate and RF-stop watchdog repair; native menu/USB logging unaccepted |
 | [VALIDATION.md](VALIDATION.md) | 分阶段验收、失败证据与未验证项 / Stage validation, failure evidence and unverified behavior |
 | [CONFIRMATION.md](CONFIRMATION.md) | 设备与 RAM 确认、授权范围和早期验证 / Device/RAM confirmation, authorization and early validation |
 | [RAM-FEDORA.md](RAM-FEDORA.md) | RAM 根文件系统与原生 Fedora 交接 / RAM root filesystem and native Fedora handoff |
 | [INSTALL-PLAN.md](INSTALL-PLAN.md) | 持久安装范围、分区布局与恢复材料 / Persistent-install scope, partition layout and recovery materials |
 | [INSTALL-XFS.md](INSTALL-XFS.md) | XFS 安装、持久启动、登录和回退记录 / XFS installation, persistent boot, login and rollback records |
 | [LAN-SSH.md](LAN-SSH.md) | LAN SSH、防火墙、公钥与 SELinux 状态 / LAN SSH, firewall, public keys and SELinux state |
+| [FIREWALL-OPEN.md](FIREWALL-OPEN.md) | 新授权的活动/默认区域 ACCEPT、双栈 8080 与内建检查保留；未重启 / Newly authorized active/default-zone ACCEPT, dual-stack 8080 and retained built-in checks; no reboot |
 | [PODMAN-USER-SESSION.md](PODMAN-USER-SESSION.md) | 用户 manager、D-Bus 与 Podman 会话修复 / User manager, D-Bus and Podman session repair |
 
 ## 显示 / Display
@@ -141,3 +182,8 @@ checking.
 | [WIFI-CN.md](WIFI-CN.md) | CN 切换与旧文本审计拒绝 / CN transition and old text-audit rejection |
 | [WIFI-CN-INDOOR-DIAGNOSIS.md](WIFI-CN-INDOOR-DIAGNOSIS.md) | iw 文本取证缺陷与原始 nl80211 方案 / iw text-evidence defect and raw nl80211 approach |
 | [WIFI-CN-RAW-FIX.md](WIFI-CN-RAW-FIX.md) | 原始 INDOOR_ONLY 修复与开机自动连接更新 / Raw INDOOR_ONLY repair and boot-association update |
+| [WIFI-SWITCH-RECOVERY.md](WIFI-SWITCH-RECOVERY.md) | 手动切换等待凭据、未收尾 NV 与授权恢复 / Manual-switch credential wait, unclean NV lifecycle and authorized recovery |
+| [WIFI-5GHZ-DISCONNECT.md](WIFI-5GHZ-DISCONNECT.md) | 5 GHz AP 断开、同 SSID 重连 US/CN 冲突与保护停机；首次掉线根因未证实 / 5 GHz AP disconnect, same-SSID reconnect US/CN conflict and safety shutdown; first-loss root cause unproven |
+| [WIFI-ROUTER-COUNTRY.md](WIFI-ROUTER-COUNTRY.md) | 审阅 US 策略已部署但未验收、三次安全失败、频段国家码冲突与暂缓配置 / Reviewed US policy deployed but unaccepted, three safely cleaned failures, conflicting band countries and deferred router configuration |
+| [WIFI-FIXED-CN.md](WIFI-FIXED-CN.md) | 固定 CN 双频策略、新证明、2.4 GHz 持续/同 SSID 重关联及双栈验收；5 GHz 仍超时 / Fixed CN on both bands, new proof, continuous/same-SSID 2.4 GHz and dual-stack acceptance; 5 GHz still times out |
+| [WIFI-IPV6.md](WIFI-IPV6.md) | 隔离双栈配置、新原生证明、公网 IPv6/IPv4 与入站限制验收；未复验冷启动 / Isolated dual-stack profiles, fresh native proof, public IPv6/IPv4 and retained inbound-policy acceptance; cold start not revalidated |

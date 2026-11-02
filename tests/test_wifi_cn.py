@@ -55,7 +55,7 @@ class WifiCNTests(unittest.TestCase):
   self.assertEqual({name for name,value in klass.__dict__.items() if callable(value)},{'text','audit','save'})
  def test_pinned_original_sources_and_runtime_safety_not_relaxed(self):
   self.assertEqual(hashlib.sha256((ROOT/'tools/wifi-radio-service.py').read_bytes()).hexdigest(),C.RADIO_SHA)
-  self.assertEqual(hashlib.sha256((ROOT/'tools/wifi-auto-service.py').read_bytes()).hexdigest(),'428495f9e7007d9728b0df9887b630c62013622b9137af39d4afcf532191b725')
+  self.assertEqual(hashlib.sha256((ROOT/'tools/wifi-auto-service.py').read_bytes()).hexdigest(),'a5000fef3c7f4641e917dbb206a4993861ccd46eb56b649c7e748630a5b99c96')
   s=(ROOT/'tools/picasso-wifi-radio-cn.service').read_text()
   for value in ('WatchdogSec=8s','TimeoutStopSec=45s','Restart=no','MemoryMax=256M','--cleanup'):self.assertIn(value,s)
   src=(ROOT/'tools/wifi-cn-radio-service.py').read_text();self.assertNotIn('self.activate(',src);self.assertNotIn('reset-failed',src);self.assertNotIn('--show-secrets',src)

@@ -22,14 +22,16 @@ items are not complete.
 | Fedora Server boot and systemd | Implemented | Native Fedora userspace and init. |
 | Persistent XFS root filesystem | Implemented | Installation, normal restarts and file persistence demonstrated. |
 | Linux 7.3.1 default and 6.18 rescue | Implemented | Default native boot and automatic screen/Wi-Fi startup demonstrated; verified 6.18 rescue retained. |
+| Petitboot multi-kernel menu | Partial | Isolated loader candidate; native menu not accepted, physical keys unverified and kernel handoff unimplemented. |
 | CPU and UFS storage | Implemented | CPU bring-up, frequency scaling and storage access; not full memory or storage-endurance qualification. |
 | USB networking, serial console and SSH | Implemented | USB NCM/ACM and public-key SSH access. |
-| Firewall and ZRAM | Implemented | Packet filtering and compressed swap demonstrated. |
+| Firewall and ZRAM | Implemented | Compressed swap; all service ports intentionally open. |
 | Text console and backlight control | Implemented | Native tty1, idle backlight-off and volume-up wake using the inherited framebuffer. |
 | 2.4 GHz Wi-Fi | Partial | WPA2/CCMP, DHCP, DNS and HTTPS demonstrated; historical link-loss issues remain unresolved. |
-| Startup Wi-Fi priority and fallback | Partial | Cold-boot autoconnection/fallback and LAN SSH demonstrated on 7.3.1; the preferred 5 GHz link remains unresolved. |
+| Wi-Fi IPv4/IPv6 dual stack | Implemented | Native dual-stack connectivity. |
+| Startup Wi-Fi priority and fallback | Partial | Fixed CN policy on both bands with working 2.4 GHz fallback; preferred 5 GHz remains unresolved. |
 | Automatic Wi-Fi reconnection | Not enabled | The latest service does not automatically retry after link loss. |
-| 5 GHz Wi-Fi | Unresolved | Connection attempts have timed out. |
+| 5 GHz Wi-Fi | Unresolved | Historical association demonstrated; initial connection and AP disconnection issues remain unresolved. |
 | Rootless Podman | Partial | A limited container workload demonstrated on 7.3.1; broad workload qualification remains pending. |
 | Native DSI display, GPU and touch | Not implemented | The framebuffer text console is not a full native graphics stack. |
 | Bluetooth, audio, cellular and cameras | Unavailable | Not ported or not validated as usable device features. |
@@ -38,7 +40,7 @@ items are not complete.
 | Suspend and resume | Not implemented | Turning off the backlight is not system suspend. |
 | Power-button shutdown | Partial | Historical input/shutdown failures remain; the 7.3.1 power service is disabled. |
 | Remaining powered off after shutdown | Unresolved | The device has restarted by itself after shutdown. |
-| SELinux enforcement | Not enabled | The recorded kernel state is permissive, not enforcing. |
+| SELinux enforcement | Not enabled | SELinux is disabled in the native runtime. |
 | Long-term stability | Unverified | No daily-driver, endurance or unattended-operation qualification. |
 
 ## Documentation
