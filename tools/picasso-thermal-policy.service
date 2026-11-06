@@ -1,0 +1,24 @@
+[Unit]
+Description=Picasso early passive CPU cooling (critical protection unchanged)
+ConditionKernelVersion=7.3.1-picasso-wifi2
+Before=picasso-wifi-autoconnect-cn-7.3.1.service picasso-wifi-probation-7.3.1.service picasso-screen-7.3.1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 -I /opt/picasso-kernel-7.3.1/picasso-thermal/thermal-policy.py --apply
+TimeoutStartSec=15s
+Restart=no
+CPUAffinity=0 1 2 3
+MemoryMax=64M
+UMask=0077
+StateDirectory=picasso-thermal-policy
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/sys/class/thermal /sys/devices/virtual/thermal
+
+[Install]
+WantedBy=multi-user.target

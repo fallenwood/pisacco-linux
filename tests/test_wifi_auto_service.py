@@ -48,6 +48,27 @@ class WifiAutoTests(unittest.TestCase):
    with patch.dict(A.os.environ,{'NOTIFY_SOCKET':address}):
     for message in ('READY=1','WATCHDOG=1','STATUS=not a STOPPING=1 tag'):
      A.notify(message);self.assertEqual(receiver.recv(4096).decode(),message)
+ def test_explicit_65C_startup_and_runtime_boundary(self):
+  self.assertEqual(A.STARTUP_LIMIT_MC,65000);self.assertEqual(A.RUNTIME_ABORT_MC,65000)
+  for limit in (A.STARTUP_LIMIT_MC,A.RUNTIME_ABORT_MC):
+   for value in (40000,45000,60000,64999):self.assertTrue(A.below_temperature_limit({'cpu':value},limit))
+   for value in (65000,65001,110000):self.assertFalse(A.below_temperature_limit({'cool_cpu':30000,'hot_cpu':value},limit))
+   for invalid in ({},{'cpu':-10001},{'cpu':150001},{'cpu':True}):
+    with self.assertRaises(RuntimeError):A.below_temperature_limit(invalid,limit)
+ def test_guard_rejects_65C_before_sending_RF_lease(self):
+  o=A.Service.__new__(A.Service);o.stop_event=SimpleNamespace(wait=lambda _:False);o.record={'peak_temperature_mc':0};o.failure=None
+  with patch.object(A,'temperatures',return_value={'cpu':65000}),patch.object(A,'notify') as notify:
+   o.guard()
+  self.assertIn('65C thermal abort',o.failure);notify.assert_not_called()
+ def test_thermal_qos_can_only_lower_cpu_ceiling_on_hardware_frequencies(self):
+  frequencies=(652800,940800,1094400,1478400,2208000)
+  for cap in frequencies[:3]:self.assertEqual(A.validate_cpu_cap(cap,652800,1094400,frequencies),cap)
+  for cap in (0,-1,True,600000,1000000,1478400,2208000):
+   with self.subTest(cap=cap),self.assertRaises(RuntimeError):A.validate_cpu_cap(cap,652800,1094400,frequencies)
+ def test_read_cpu_cap_checks_actual_minimum_and_hardware_table(self):
+  with tempfile.TemporaryDirectory() as d:
+   p=Path(d);(p/'scaling_max_freq').write_text('940800');(p/'scaling_min_freq').write_text('652800');(p/'scaling_available_frequencies').write_text('652800 940800 1094400 2208000')
+   with patch.object(A,'Path',return_value=p):self.assertEqual(A.read_cpu_cap(6,1094400),940800)
  def test_exact_two_preserved_topology_FDTs_only(self):
   for fdt in A.APPROVED_FDTS:A.approved_fdt(A.APPROVED_FDTS[0],fdt)
   for base,live in ((A.APPROVED_FDTS[1],A.APPROVED_FDTS[1]),(A.APPROVED_FDTS[0],'0'*64)):
@@ -82,9 +103,9 @@ class WifiAutoTests(unittest.TestCase):
  def test_unit_retains_watchdog_stop_limit_and_no_restart(self):
   u=(ROOT/'tools/picasso-wifi-auto.service').read_text()
   for text in ('WatchdogSec=8s','TimeoutStopSec=45s','Restart=no','MemoryMax=256M','wifi-auto-service.py --cleanup'):self.assertIn(text,u)
- def test_no_password_export_or_trigger_safety_weakening(self):
+ def test_no_password_export_or_other_guard_weakening(self):
   t=(ROOT/'tools/wifi-auto-service.py').read_text()
-  for text in ('self.audit()','45000','40000','1094400',"'passwd-file'",'private_file(CREDENTIALS'):
+  for text in ('self.audit()','STARTUP_LIMIT_MC = 65000','RUNTIME_ABORT_MC = 65000','1094400',"'passwd-file'",'private_file(CREDENTIALS'):
    self.assertIn(text,t)
   for text in ('--show-secrets','reset-failed','modemst1.bin','/dev/mem'):self.assertNotIn(text,t)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Build isolated 7.3.1 screen/PON and opt-in Wi-Fi modules, never install them."""
+"""Build isolated 7.3.1 screen/native-primary-PON and opt-in Wi-Fi modules offline."""
 import hashlib
 import json
 import os
@@ -24,8 +24,8 @@ def main():
     if profile.version != '7.3.1':
         raise SystemExit('Explicit KERNEL_VERSION=7.3.1 required; existing modules are protected')
     release = (profile.output / 'kbuild/include/config/kernel.release').read_text().strip()
-    if not release.startswith('7.3.1-picasso-wifi'):
-        raise SystemExit('Build the matching isolated Wi-Fi kernel first')
+    if release != '7.3.1-picasso-wifi2':
+        raise SystemExit('Native-primary PON port requires exactly 7.3.1-picasso-wifi2')
     baseline = profile.output / 'modules/lib/modules' / release
     before = {str(p.relative_to(baseline)): digest(p) for p in baseline.rglob('*.ko')}
     if not before:
@@ -36,19 +36,16 @@ def main():
             'O=' + str(profile.output / 'kbuild'), 'ARCH=arm64', 'LLVM=1',
             'LOCALVERSION=', '-j' + os.environ.get('JOBS', '6')]
     artifacts = {}
-    for kind in ('display', 'power'):
+    for kind, source_kind in (('display', 'display'), ('power', 'power-7.3.1')):
         stage = output / kind
         stage.mkdir()
-        for path in (ROOT / 'kernel' / kind).iterdir():
+        for path in (ROOT / 'kernel' / source_kind).iterdir():
             if path.name == 'Makefile' or path.suffix == '.c' and not path.name.endswith('.mod.c'):
                 shutil.copyfile(path, stage / path.name)
         if kind == 'power':
-            path = stage / 'picasso-pon-reason-audit.c'
-            text = path.read_text()
-            old = '"6.18.58-picasso-lts-wifi2"'
-            if text.count(old) != 1:
+            text = (stage / 'picasso-pon-reason-audit731.c').read_text()
+            if '#define AUDIT_RELEASE ' + json.dumps(release) not in text:
                 raise ValueError('PON exact-release guard changed; review the port')
-            path.write_text(text.replace(old, json.dumps(release)))
         subprocess.run(make + ['M=' + str(stage), 'modules'], check=True)
         for path in stage.glob('*.ko'):
             artifacts[path.name] = path

@@ -116,6 +116,18 @@ class CandidateRelocationTests(unittest.TestCase):
                 self.assertIn('[Unit]\nConditionKernelVersion=7.3.1-picasso-wifi2\n', rendered)
                 self.assertLess(rendered.index('ConditionKernelVersion='), rendered.index('[Service]'))
 
+    def test_early_cooling_is_required_before_screen_and_wifi_activation(self):
+        for name in ('screen', 'wifi-autoconnect-cn'):
+            template = (ROOT / 'tools' / ('picasso-' + name + '.service')).read_text()
+            rendered = runtime.bind_early_cooling(runtime.bind_kernel_version(template, '7.3.1-picasso-wifi2'))
+            self.assertIn('Requires=picasso-thermal-policy.service\n', rendered)
+            self.assertIn('After=picasso-thermal-policy.service\n', rendered)
+            self.assertLess(rendered.index('Requires=picasso-thermal-policy.service'), rendered.index('[Service]'))
+            with self.assertRaises(ValueError):
+                runtime.bind_early_cooling(rendered)
+        with self.assertRaises(ValueError):
+            runtime.bind_early_cooling('[Service]\n')
+
     def test_existing_or_missing_kernel_condition_layout_requires_explicit_review(self):
         for template in ('[Service]\n', '[Unit]\nConditionKernelVersion=6.18.*\n[Service]\n'):
             with self.subTest(template=template), self.assertRaises(ValueError):
@@ -127,10 +139,12 @@ class CandidateRelocationTests(unittest.TestCase):
         self.assertLess(rendered.index("data['console']=console.console_info()"),
                         rendered.index("load('startup_cooling'"))
         self.assertLess(rendered.index("load('startup_cooling'"),
-                        rendered.index("max(temperatures().values())<40000"))
-        self.assertLess(rendered.index("max(temperatures().values())<40000"),
+                        rendered.index('below_temperature_limit(temperatures(),STARTUP_LIMIT_MC)'))
+        self.assertLess(rendered.index('below_temperature_limit(temperatures(),STARTUP_LIMIT_MC)'),
                         rendered.index('keyfd=os.open'))
-        self.assertIn("max(values.values())<45000", rendered)
+        self.assertIn('below_temperature_limit(values,RUNTIME_ABORT_MC)', rendered)
+        self.assertIn('STARTUP_LIMIT_MC = 65000', rendered)
+        self.assertIn('RUNTIME_ABORT_MC = 65000', rendered)
         compile(rendered, '<candidate-screen>', 'exec')
 
     def test_changed_screen_arming_layout_cannot_silently_drop_the_start_guard(self):

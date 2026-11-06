@@ -56,7 +56,9 @@ diskroot_valid() {
     [ "$(cat /newroot/etc/picasso-install-partuuid 2>/dev/null)" = "${ROOTARG#PARTUUID=}" ] || return 1
     [ "$(cat /newroot/etc/picasso-native-init.done 2>/dev/null)" = PICASSO_NATIVE_INIT_V1 ] || return 1
     grep -qx 'ID=fedora' /newroot/etc/os-release || return 1
-    grep -qx 'VERSION_ID=44' /newroot/etc/os-release || return 1
+    # The V2 marker identifies the completed installation, not its upgrade release.
+    # Keep disk upgrades explicit; RAM-root admission remains Fedora 44 only.
+    grep -qx 'VERSION_ID=4[45]' /newroot/etc/os-release || return 1
     grep -qx 'VARIANT_ID=server' /newroot/etc/os-release || return 1
     [ -x /newroot/usr/lib/systemd/systemd ] || return 1
     for d in dev proc sys run; do
@@ -113,7 +115,7 @@ if [ "$RESCUE" = 0 ] && [ -n "$ROOTARG" ] && [ -n "$ROOTRO" ]; then
                 exec switch_root /newroot /usr/lib/systemd/systemd
             fi
         else
-            log 'root is not a completed Picasso Fedora Server 44 disk install; refusing it'
+            log 'root is not a completed Picasso Fedora Server 44/45 disk install; refusing it'
             umount /newroot
         fi
     fi

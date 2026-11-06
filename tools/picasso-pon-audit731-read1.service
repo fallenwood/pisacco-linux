@@ -1,0 +1,36 @@
+[Unit]
+Description=Picasso one explicitly permitted 7.3.1 read-only PON capture
+ConditionKernelVersion=7.3.1-picasso-wifi2
+Requisite=picasso-thermal-policy.service
+After=picasso-thermal-policy.service
+
+[Service]
+Type=exec
+User=root
+ExecStart=/usr/bin/python3 -I /opt/picasso-pon-audit-7.3.1-read1/collect-pon731.py --sample-once
+ExecStopPost=/usr/bin/python3 -I /opt/picasso-pon-audit-7.3.1-read1/collect-pon731.py --cleanup
+Restart=no
+RuntimeMaxSec=20
+TimeoutStartSec=10
+TimeoutStopSec=6
+KillMode=control-group
+MemoryMax=128M
+TasksMax=12
+CPUAffinity=0 1 2 3
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_MODULE
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/var/lib/picasso-power/pon-audit731-read1
+SystemCallFilter=~@reboot @mount @swap @raw-io @clock

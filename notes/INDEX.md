@@ -28,6 +28,43 @@ US 后暂缓调整，RF 继续安全关闭，没有启用新证明或持续 Wi-F
 2026-11-02 新授权改为[固定 CN](WIFI-FIXED-CN.md)，不再等待 AP 统一 US：
 两个批准频段均请求 CN，2.4 GHz 新原生证明、持续运行、同 SSID 重关联和双栈
 非 USB LAN SSH 已通过；5 GHz 仍连接超时，没有新增冷启动或长期稳定性验收。
+2026-11-06 再次因旧 NV 生命周期拒启而失去 LAN，经新授权恢复普通工作副本，
+部署 CPU 提前被动降温和更低频率兼容，并通过新原生证明与 LAN 查询；见
+[局域网恢复与提前降温](NETWORK-THERMAL-REPAIR.md)。本次 5 GHz 已关联，
+不代表历史掉线已修复，也没有整机过热关机根因或新增冷启动验收。
+同日后续明确授权把 Wi-Fi/屏幕软件运行和启动门槛都提高到 65°C，保留 40°C 被动
+降频；新证明、持续联网及开机启用/依赖复核见[65°C 软件门槛](THERMAL-LIMIT-65.md)。
+这不是新重启验收，也不解除异常断电后 dirty 拒启保护。
+随后手机经 DNF 升级到 Fedora 45，内建 44 专用引导校验拒绝根系统交接；
+当时停在救援模式，Fedora/SSH/Wi-Fi/屏幕/NTP 均未启动。只读确认升级日志已结束、
+根版本为 45、安装标记保留并卸载根分区；未修复或写 boot，见
+[Fedora 45 启动拒绝](FEDORA-45-BOOT-GUARD.md)。此前在线结果是历史快照。
+之后用户授权受控临时启动；已核验回收原 boot，准备仅改内建 `/init` 的 44/45 候选，
+并在备份后暂时关闭四个实验功能开关。明确根分区曾按新授权 RW 挂载后卸载；
+该准备阶段尚未临时启动或永久写 boot。
+再后用户现场进入 Fastboot，单次临时 boot 已实际启动 Fedora 45，systemd running、
+USB SSH、40°C 提前降温、93 个资产 pin 和普通工作/checkpoint 检查通过。
+完整 128 MiB boot 与旧备份一致，仍未永久写入；四个实验功能关闭，NTP 未同步，
+屏幕/Wi-Fi/充电/耐久与下次普通重启当时仍未验收，详见同页相应阶段。
+之后另获明确授权，完成新原生 Wi-Fi probation/清理与证明、屏幕实键/亮度/空闲测试和
+用户终端显示确认，仅写 boot 并独立完整直接读回，恢复两服务和 NTP 同步。
+两个旧 RMTFS 辅助进程退出租约超时失败未清除，整体 degraded；当前新子进程健康。
+该阶段没有新增普通重启验收，详见 [45 永久安装与功能验收](FEDORA-45-INSTALL-ACCEPTANCE.md)。
+再后用户明确授权一次正常重启：先干净停 RF、独立验清理并归档旧启动的三个辅助失败，
+仅发送一次普通 reboot。永久引导与 Wi-Fi 自启动通过，新启动 running、零 failed、
+双栈 LAN/HTTPS/NTP 正常；屏幕未自启动，已手动恢复，但尚未修复自启动且未再次重启。
+详见 [45 普通重启验收](FEDORA-45-NORMAL-REBOOT.md)。
+后续按新授权确认 kmscon tty1 与 getty 互斥，并发现全局 autovt 模板别名可绕过实例屏蔽。
+只修复 tty1 专用选择、屏蔽和别名，保留其他终端；本轮新增一次正常重启后屏幕/Wi-Fi
+均自动启动，running/零 failed，双栈 LAN/HTTPS/NTP 通过。阶段开始时另有监管采样变化
+导致 Wi-Fi 安全停机的失败，已归档而未放宽守卫或宣称根治；见
+[45 屏幕自启动修复](FEDORA-45-SCREEN-AUTOSTART.md)。
+随后按“添加到当前7.3.1上面”适配独立 PON 原因采样器，离线构建并在手机旁路存放，
+未加载或读取 PON。旧缺失主机 `.ko` 按原 pin 取回，最新主机测试无错误；不改写前一
+阶段测试失败，也不宣称新硬件采样或电源修复。见 [7.3.1 PON 审计](PON-AUDIT-7.3.1.md)。
+之后另获单次只读许可，以带温度/PID租约/PID1时限和独立清理的采集器完成同一启动上的
+一次原生捕获并卸载，保留并消耗 marker。原服务与资产不变，没有新重启或电源写入；
+原因位不等于根因。见 [7.3.1 PON 单次采样](PON-READ-7.3.1.md)。
 
 English: This directory holds implementation, build, installation, configuration,
 diagnosis and validation details. Each note provides Chinese and English while
@@ -64,6 +101,62 @@ A fresh 2026-11-02 grant selected [fixed CN](WIFI-FIXED-CN.md), superseding the
 wait for consistent AP US: both authorized bands request CN. New native proof,
 continuous 2.4 GHz, same-SSID reassociation and dual-stack non-USB LAN SSH passed.
 5 GHz still times out; no new cold-start or endurance acceptance was obtained.
+A fresh 2026-11-06 grant addressed another old-NV-lifecycle LAN refusal by restoring
+ordinary work copies, deploying early passive CPU cooling and lower-cap
+compatibility, and obtaining a new native proof and LAN checks; see
+[LAN recovery and early cooling](NETWORK-THERMAL-REPAIR.md). 5 GHz associated this
+time; historical loss is not declared fixed, and whole-phone thermal-shutdown
+root cause and new cold-start qualification remain unverified.
+A later same-day explicit grant raised Wi-Fi/screen runtime and startup software
+limits to 65°C while retaining passive cooling at 40°C. See
+[65°C software limits](THERMAL-LIMIT-65.md) for a fresh proof, continuous networking
+and verified boot enablement/dependencies. This is not new reboot acceptance and
+does not bypass dirty refusal after unclean power loss.
+The phone was subsequently DNF-upgraded to Fedora 45, and the embedded 44-only
+guard refused root handoff. It was then in rescue with Fedora/SSH/Wi-Fi/screen/NTP
+not started. Read-only inspection confirmed ended upgrade logs, release 45 and
+retained install markers, then unmounted the root. No repair or boot write;
+see [Fedora 45 boot refusal](FEDORA-45-BOOT-GUARD.md). Earlier online results
+are historical snapshots.
+The operator then authorized controlled temporary boot. Read back the pinned
+original boot, prepare a 44/45 candidate changing only embedded `/init`, and
+inhibit four experimental features after backup. The explicit root was RW-mounted
+under the new grant and unmounted again; no temporary boot or permanent write yet
+at that preparation stage.
+After physical Fastboot entry, one temporary boot actually started Fedora 45:
+systemd running, USB SSH, early 40°C cooling, 93 asset pins and ordinary
+work/checkpoint checks passed. The entire 128 MiB boot still matches its old
+backup; no permanent installation. Four experimental features remain off and
+NTP unsynchronized; screen/Wi-Fi/charging/endurance and next ordinary reboot
+were then unaccepted. See that note's corresponding stage.
+A separate later grant authorized fresh native Wi-Fi probation/cleanup/proof,
+physical screen-key/brightness/idle acceptance and operator terminal confirmation,
+then boot-only installation, independent full direct readback and service/NTP
+restoration. Two old RMTFS exit-lease failures remain; global state is degraded,
+while new live children are healthy. No new normal-reboot acceptance; see
+[45 permanent installation and features](FEDORA-45-INSTALL-ACCEPTANCE.md).
+A later explicit one-normal-reboot grant first cleanly stopped RF, independently
+checked cleanup and archived three old-boot helper failures, then sent one normal
+reboot only. Permanent boot/Wi-Fi autostart passed; new boot is running, zero
+failed, dual-stack LAN/HTTPS/NTP work. Screen did not autostart and was manually
+restored, not fixed; no second reboot. See
+[45 normal-reboot acceptance](FEDORA-45-NORMAL-REBOOT.md).
+A later grant confirmed kmscon/getty tty1 conflict and a global autovt-template
+alias bypassing the instance mask. Fix only tty1 selection/mask/alias, preserving
+other consoles. One additional normal reboot passes screen/Wi-Fi autostart,
+running/zero failed, dual-stack LAN/HTTPS/NTP. At phase entry, a separate regulatory
+sampling change had safely stopped Wi-Fi; archive it without relaxing guards or
+claiming a cure. See [45 screen-autostart repair](FEDORA-45-SCREEN-AUTOSTART.md).
+A later request to add the PON audit to current 7.3.1 produced a separate port,
+offline build and side-by-side phone staging, without loading or PON reads.
+The missing legacy host `.ko` was recovered against its original pin; the latest
+host suite has no errors. Earlier test failures remain historical fact, without
+claiming new hardware sampling or a power fix. See [7.3.1 PON audit](PON-AUDIT-7.3.1.md).
+A separate one-shot read-only grant then allowed one native capture/unload in the
+same boot, using thermal/PID-lease/PID1 deadlines and independent cleanup. Markers
+are retained and consumed. Existing owners/assets remain unchanged, without a new
+reboot or power write; reason bits are not causality. See
+[7.3.1 one-shot PON capture](PON-READ-7.3.1.md).
 
 中文：除 Markdown 链接外，代码、命令与 `out/` 证据路径均相对于仓库根目录。
 `out/`、`downloads/` 和 `src/` 是被忽略的本地产物，不保证存在于新克隆中。
@@ -130,6 +223,13 @@ checking.
 | [INSTALL-PLAN.md](INSTALL-PLAN.md) | 持久安装范围、分区布局与恢复材料 / Persistent-install scope, partition layout and recovery materials |
 | [INSTALL-XFS.md](INSTALL-XFS.md) | XFS 安装、持久启动、登录和回退记录 / XFS installation, persistent boot, login and rollback records |
 | [LAN-SSH.md](LAN-SSH.md) | LAN SSH、防火墙、公钥与 SELinux 状态 / LAN SSH, firewall, public keys and SELinux state |
+| [FEDORA-45-BOOT-GUARD.md](FEDORA-45-BOOT-GUARD.md) | 45 旧引导拒绝、候选准备、串口失败与单次临时启动的历史阶段 / Historical 45 guard refusal, candidate preparation, serial failure and single temporary boot |
+| [FEDORA-45-INSTALL-ACCEPTANCE.md](FEDORA-45-INSTALL-ACCEPTANCE.md) | 永久安装阶段：新原生 Wi-Fi 证明、屏幕实键/视觉、仅写 boot 与完整直接读回；保留旧辅助失败 / Permanent-installation stage: fresh native Wi-Fi proof, physical/visual screen, boot-only write/full direct readback; preserved old helper failures |
+| [FEDORA-45-NORMAL-REBOOT.md](FEDORA-45-NORMAL-REBOOT.md) | 首次普通重启的永久引导/Wi-Fi 自启动通过；当时屏幕未自启动，只手动恢复 / First normal reboot verifies permanent boot/Wi-Fi autostart; screen then failed autostart, manually restored only |
+| [FEDORA-45-SCREEN-AUTOSTART.md](FEDORA-45-SCREEN-AUTOSTART.md) | kmscon/getty 冲突与 autovt 实例别名修复；新增一次重启后屏幕/Wi-Fi 自启动通过，监管变化安全停机仍未根治 / kmscon/getty conflict and autovt instance-alias repair; one more reboot passes screen/Wi-Fi autostart, regulatory-change safety shutdown remains unresolved |
+| [DNF-CLOCK-SIGNATURE.md](DNF-CLOCK-SIGNATURE.md) | 手机时钟落后导致 RPM 签名尚未生效；原包校验恢复、现有自动校时启用且已同步，未执行安装或重启 / Lagging phone clock made an RPM signature not yet valid; original package verified after correction, existing automatic time sync enabled/synchronized, no install or reboot |
+| [THERMAL-LIMIT-65.md](THERMAL-LIMIT-65.md) | 新授权的 Wi-Fi/屏幕启动及运行 65°C 门槛、新证明与开机依赖；被动降频/临界保护不变，未重启 / Newly authorized Wi-Fi/screen startup/runtime 65°C limits, new proof and boot dependencies; passive/critical protection unchanged, no reboot |
+| [NETWORK-THERMAL-REPAIR.md](NETWORK-THERMAL-REPAIR.md) | 旧 dirty 拒启恢复、CPU 提前被动降温与更低频率兼容；整机过热关机根因未证实 / Old-dirty startup recovery, early passive CPU cooling and stricter-cap compatibility; whole-phone thermal-shutdown root cause unproven |
 | [FIREWALL-OPEN.md](FIREWALL-OPEN.md) | 新授权的活动/默认区域 ACCEPT、双栈 8080 与内建检查保留；未重启 / Newly authorized active/default-zone ACCEPT, dual-stack 8080 and retained built-in checks; no reboot |
 | [PODMAN-USER-SESSION.md](PODMAN-USER-SESSION.md) | 用户 manager、D-Bus 与 Podman 会话修复 / User manager, D-Bus and Podman session repair |
 
@@ -157,6 +257,8 @@ checking.
 | [POWER-AUTOSTART.md](POWER-AUTOSTART.md) | 自行启动的已知失败与边界 / Known self-start failure and boundaries |
 | [POWER-CHAIN-AUDIT.md](POWER-CHAIN-AUDIT.md) | 电源链只读审计与限制 / Read-only power-chain audit and limitations |
 | [POWER-PON-REASON.md](POWER-PON-REASON.md) | PON/POFF 采样与解释边界 / PON/POFF sampling and interpretation limits |
+| [PON-AUDIT-7.3.1.md](PON-AUDIT-7.3.1.md) | 7.3.1 PON 适配准备快照 / 7.3.1 PON port preparation snapshot |
+| [PON-READ-7.3.1.md](PON-READ-7.3.1.md) | 单次 PON 原生捕获、卸载与许可已消耗 / One native PON capture, unloaded, permission consumed |
 | [POWER-PERSISTENT.md](POWER-PERSISTENT.md) | 接受已知限制后的 DTB 与服务固化 / DTB/service persistence after accepting known limitations |
 
 ## Wi-Fi

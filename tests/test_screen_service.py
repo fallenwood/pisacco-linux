@@ -49,8 +49,14 @@ class PersistentScreenTests(unittest.TestCase):
   for text in ('Restart=no','WatchdogSec=8s','DevicePolicy=closed','DeviceAllow=/dev/fb0 r','DeviceAllow=/dev/input/event0 r','DeviceAllow=/dev/tty1 r','Requires=getty@tty1.service','CapabilityBoundingSet=CAP_SYS_MODULE','WantedBy=multi-user.target','InaccessiblePaths=-/sys/power/state'):
    self.assertIn(text,t)
   self.assertNotIn('char-input',t);self.assertNotIn('/dev/mem',t)
- def test_thermal_thresholds_unchanged(self):
-  t=(ROOT/'tools/screen-service.py').read_text();self.assertIn("max(values.values())<45000",t);self.assertIn("max(temperatures().values())<40000",t)
+ def test_explicit_65C_runtime_and_startup_limits_fail_at_the_boundary(self):
+  self.assertEqual(S.STARTUP_LIMIT_MC,65000);self.assertEqual(S.RUNTIME_ABORT_MC,65000)
+  for limit in (S.STARTUP_LIMIT_MC,S.RUNTIME_ABORT_MC):
+   for value in (40000,45000,60000,64999):self.assertTrue(S.below_temperature_limit({'cpu':value},limit))
+   for value in (65000,65001,110000):self.assertFalse(S.below_temperature_limit({'cool_cpu':30000,'hot_cpu':value},limit))
+   for invalid in ({},{'cpu':-10001},{'cpu':150001},{'cpu':True}):
+    with self.assertRaises(RuntimeError):S.below_temperature_limit(invalid,limit)
+  t=(ROOT/'tools/screen-service.py').read_text();self.assertIn('below_temperature_limit(values,RUNTIME_ABORT_MC)',t);self.assertIn('below_temperature_limit(temperatures(),STARTUP_LIMIT_MC)',t)
  def test_unapproved_brightness_rejected_without_writing(self):
   with self.assertRaises(RuntimeError):S.brightness(65)
  def test_missing_thermal_sensors_fail_closed(self):

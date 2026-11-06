@@ -34,6 +34,8 @@ POWER_TRIAL_FDT_SHA='ecbfe0d99b476b21e1e50f233576bcf1ba22f84446e9367cb9214038317
 CONFIG_SHA='f60bc2723f34cd08da927b4a3a79673bddc7bcd9052114cdd055cf958106dfbc'
 EVENT=struct.Struct('@llHHi')
 STOP=False
+STARTUP_LIMIT_MC = 65000
+RUNTIME_ABORT_MC = 65000
 
 
 def require(ok,message):
@@ -48,6 +50,12 @@ def temperatures():
     values={p.parent.name:int(p.read_text()) for p in Path('/sys/class/thermal').glob('thermal_zone*/temp')}
     require(bool(values) and all(-10000<=v<=150000 for v in values.values()),'Invalid/missing thermal telemetry')
     return values
+
+
+def below_temperature_limit(values, limit_mc):
+    require(bool(values) and all(type(v) is int and -10000 <= v <= 150000
+                                 for v in values.values()), 'Invalid thermal telemetry')
+    return max(values.values()) < limit_mc
 
 
 def notify(text):
@@ -99,7 +107,7 @@ def main(probe=None):
         p=run/name
         if p.exists():require(not Path('/sys/module',MODULE).exists(),'Previous module remains owned');p.unlink()
     history=Path('/var/lib/picasso-screen/history');history.mkdir(mode=0o700,parents=True,exist_ok=True)
-    data={'run_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip()[:12]+'-'+uuid.uuid4().hex[:8],'status':'starting','pid':os.getpid(),'probe':probe,'screen_on':False,'idle_seconds':15,'brightness':64,'only_key':115,'system_suspend_allowed':False,'display_mode':'native_tty1_fbcon','synthetic_pixels_written':False,'peak_temperature_mc':0,'physical_volume_up_presses':0,'on_count':0,'off_count':0,'events':[]}
+    data={'run_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip()[:12]+'-'+uuid.uuid4().hex[:8],'status':'starting','pid':os.getpid(),'probe':probe,'screen_on':False,'idle_seconds':15,'brightness':64,'only_key':115,'system_suspend_allowed':False,'display_mode':'native_tty1_fbcon','synthetic_pixels_written':False,'peak_temperature_mc':0,'startup_limit_mc':STARTUP_LIMIT_MC,'runtime_abort_mc':RUNTIME_ABORT_MC,'physical_volume_up_presses':0,'on_count':0,'off_count':0,'events':[]}
     save(run/'session.json',data)
     fd=None;keyfd=None;leasefd=None;owned=False;selector=selectors.DefaultSelector();last_save=0;last_config=0;expected=0
     def record(event):
@@ -107,7 +115,7 @@ def main(probe=None):
         data['events'].append(item);data['events']=data['events'][-32:];save(run/'session.json',data);print(json.dumps(item),flush=True)
     def tick():
         nonlocal last_save,last_config
-        values=temperatures();data['peak_temperature_mc']=max(data['peak_temperature_mc'],max(values.values()));require(max(values.values())<45000,'45C thermal abort')
+        values=temperatures();data['peak_temperature_mc']=max(data['peak_temperature_mc'],max(values.values()));require(below_temperature_limit(values,RUNTIME_ABORT_MC),'65C thermal abort')
         now=time.monotonic()
         if leasefd is not None:
             require(os.pwrite(leasefd,b'LIVE\n',0)==5,'Short lease renewal')
@@ -131,7 +139,7 @@ def main(probe=None):
         for name,h in [('picasso-wled-service.ko',MODULE_SHA),('screen-console.py',CONSOLE_SHA),('screen-volume-policy.py',POLICY_SHA)]:require(hashlib.sha256((BASE/name).read_bytes()).hexdigest()==h,'Changed asset: '+name)
         require(not list(Path('/sys/class/backlight').glob('*')),'Existing backlight owner')
         require(not any(Path('/sys/module',n).exists() for n in (MODULE,'picasso_wled_handoff','picasso_wled_audit')),'Display module already owned')
-        require(max(temperatures().values())<40000,'Start below 40C')
+        require(below_temperature_limit(temperatures(),STARTUP_LIMIT_MC),'Start below 65C')
         console=load('native_console',BASE/'screen-console.py');policy_module=load('volume_policy',BASE/'screen-volume-policy.py')
         data['console']=console.console_info()
         nodes=[p for p in Path('/sys/class/input').glob('event*') if (p/'device/name').read_text().strip()=='gpio-keys'];require(len(nodes)==1,'Expected one GPIO input')

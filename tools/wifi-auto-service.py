@@ -36,6 +36,8 @@ WORK=Path('/var/lib/picasso-wifi-nv/work-wifi2')
 CREDENTIALS=STATE/'credentials'
 NAMES=('Chaldea','Chaldea-2.4G')
 FIRMWARE='qcom/sm7250/picasso/modem.mdt'
+STARTUP_LIMIT_MC = 65000
+RUNTIME_ABORT_MC = 65000
 
 
 def require(ok,message):
@@ -71,6 +73,29 @@ def temperatures():
     out={p.parent.name:int(p.read_text()) for p in Path('/sys/class/thermal').glob('thermal_zone*/temp')}
     require(bool(out) and all(-10000<=v<=150000 for v in out.values()),'Invalid thermal telemetry')
     return out
+
+
+def below_temperature_limit(values, limit_mc):
+    require(bool(values) and all(type(v) is int and -10000 <= v <= 150000
+                                 for v in values.values()), 'Invalid thermal telemetry')
+    return max(values.values()) < limit_mc
+
+
+def validate_cpu_cap(actual, minimum, ceiling, frequencies):
+    """Kernel cooling may lower the effective cap, never raise our ceiling."""
+    require(type(actual) is int and type(minimum) is int and type(ceiling) is int
+            and 0 < minimum <= actual <= ceiling and actual in frequencies,
+            'CPU limit exceeds ceiling or is outside the hardware table')
+    return actual
+
+
+def read_cpu_cap(cpu, ceiling):
+    policy = Path('/sys/devices/system/cpu/cpufreq/policy' + str(cpu))
+    return validate_cpu_cap(
+        int((policy / 'scaling_max_freq').read_text()),
+        int((policy / 'scaling_min_freq').read_text()), ceiling,
+        tuple(map(int, (policy / 'scaling_available_frequencies').read_text().split())),
+    )
 
 
 def work_hashes():
@@ -176,9 +201,12 @@ def cleanup():
             require((cpu,value) in (('6',2208000),('7',2400000)),'Unexpected saved CPU policy')
             p=Path('/sys/devices/system/cpu/cpufreq/policy'+cpu)/'scaling_max_freq';p.write_text(str(value))
             for _ in range(40):
-                if int(p.read_text())==value:break
-                time.sleep(0.05)
-            require(int(p.read_text())==value,'CPU restoration did not settle')
+                try:
+                    read_cpu_cap(cpu, value)
+                    break
+                except RuntimeError:
+                    time.sleep(0.05)
+            read_cpu_cap(cpu, value)  # A stricter kernel thermal QoS cap is valid.
         out['cpu_limits_restored']=True
     except Exception as exc:safe=False;out['cpu_error']=type(exc).__name__
     if r.get('nv_armed') and safe and children_stopped and not crashed and not r.get('unsafe_nv_stop') and out['wlan_absent']:
@@ -206,7 +234,7 @@ class Service:
         self.proc=None;self.mac=None;self.helper=None;self.live=False;self.stopping=False;self.failure=None;self.last_progress=time.monotonic()
         self.deadline=time.monotonic()+150;self.stop_event=threading.Event();self.health_thread=None
         session=uuid.uuid4().hex[:12];history=STATE/'history'/session;history.mkdir(mode=0o700,parents=True)
-        self.record={'session':session,'history':str(history),'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'status':'starting','attempts':[],'peak_temperature_mc':0,'credential_contents_read':False,'cpu_before':{},'children':[],'network_profile_suffix':self.network['profile_suffix']}
+        self.record={'session':session,'history':str(history),'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'status':'starting','attempts':[],'peak_temperature_mc':0,'startup_limit_mc':STARTUP_LIMIT_MC,'runtime_abort_mc':RUNTIME_ABORT_MC,'credential_contents_read':False,'cpu_before':{},'children':[],'network_profile_suffix':self.network['profile_suffix']}
         self.save()
         self.lease='picasso-rmtfs-'+session
 
@@ -217,7 +245,7 @@ class Service:
             while not self.stop_event.wait(0.2):
                 try:
                     t=temperatures();self.record['peak_temperature_mc']=max(self.record['peak_temperature_mc'],max(t.values()))
-                    require(max(t.values())<45000,'45C thermal abort')
+                    require(below_temperature_limit(t,RUNTIME_ABORT_MC),'65C thermal abort')
                     require(time.monotonic()-self.last_progress<4,'Controller progress lease expired')
                     if self.live:
                         if (self.proc/'state').read_text().strip()!='running':
@@ -287,21 +315,25 @@ class Service:
         self.mac=module.address_from_record(rec,self.cfg['factory_mac_sha256']).hex(':')
         self.health_thread=threading.Thread(target=self.guard,daemon=True);self.health_thread.start()
         for _ in range(60):
-            if max(temperatures().values())<40000:break
+            if below_temperature_limit(temperatures(),STARTUP_LIMIT_MC):break
             self.pause(1)
-        require(max(temperatures().values())<40000,'Start temperature >=40C')
+        require(below_temperature_limit(temperatures(),STARTUP_LIMIT_MC),'Start temperature >=65C')
         for cpu,expected in ((6,2208000),(7,2400000)):
             p=Path('/sys/devices/system/cpu/cpufreq/policy'+str(cpu))
             require((p/'related_cpus').read_text().strip()==str(cpu) and (p/'scaling_driver').read_text().strip()=='qcom-cpufreq-hw','CPU topology changed')
-            require(int((p/'scaling_max_freq').read_text())==expected and int((p/'scaling_min_freq').read_text())<=1094400 and 1094400 in map(int,(p/'scaling_available_frequencies').read_text().split()),'Unexpected original CPU limits')
+            require(int((p/'cpuinfo_max_freq').read_text())==expected and int((p/'scaling_min_freq').read_text())<=1094400 and 1094400 in map(int,(p/'scaling_available_frequencies').read_text().split()),'Unexpected original CPU limits')
+            read_cpu_cap(cpu, expected)
             self.record['cpu_before'][str(cpu)]=expected
         self.save()
         for cpu in self.record['cpu_before']:
             p=Path('/sys/devices/system/cpu/cpufreq/policy'+cpu)/'scaling_max_freq';p.write_text('1094400')
             for _ in range(40):
-                if int(p.read_text())==1094400:break
-                self.pause(0.05)
-            require(int(p.read_text())==1094400,'CPU cap did not settle')
+                try:
+                    read_cpu_cap(cpu, 1094400)
+                    break
+                except RuntimeError:
+                    self.pause(0.05)
+            read_cpu_cap(cpu, 1094400)
         self.text(['modprobe','-r','ath10k_core','ath','mac80211','cfg80211'])
         self.text(['modprobe','-a','ath','mac80211']);self.text(['modprobe','rmtfs_mem'])
         mem=Path('/sys/class/rmtfs/qcom_rmtfs_mem1')

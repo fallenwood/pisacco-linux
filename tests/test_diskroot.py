@@ -43,6 +43,35 @@ class DiskRootGuard(unittest.TestCase):
         self.mounts.write_text(f'/dev/fixture {self.root} xfs ro,norecovery 0 0\n')
         self.assertTrue(self.accepted())
 
+    def test_completed_fedora45_xfs_upgrade_accepted_with_original_v2_marker(self):
+        self.fstype = 'xfs'
+        (self.root/'etc/picasso-install-fstype').write_text('xfs\n')
+        self.mounts.write_text(f'/dev/fixture {self.root} xfs ro,norecovery 0 0\n')
+        (self.root/'etc/os-release').write_text('ID=fedora\nVERSION_ID=45\nVARIANT_ID=server\n')
+        self.assertTrue(self.accepted())
+
+    def test_other_or_malformed_release_rejected(self):
+        for release in ('43', '46', '445', '45extra', '4[45]', '"45"', ''):
+            with self.subTest(release=release):
+                (self.root/'etc/os-release').write_text(f'ID=fedora\nVERSION_ID={release}\nVARIANT_ID=server\n')
+                self.assertFalse(self.accepted())
+
+    def test_fedora45_still_requires_each_identity_guard(self):
+        release = self.root/'etc/os-release'
+        release.write_text('ID=fedora\nVERSION_ID=45\nVARIANT_ID=server\n')
+        for name in ('picasso-fedora-root', 'picasso-install-fstype',
+                     'picasso-install-partuuid', 'picasso-native-init.done'):
+            p = self.root/'etc'/name
+            old = p.read_bytes()
+            with self.subTest(marker=name):
+                p.unlink()
+                self.assertFalse(self.accepted())
+                p.write_bytes(old)
+        for identity in ('ID=other\nVERSION_ID=45\nVARIANT_ID=server\n',
+                         'ID=fedora\nVERSION_ID=45\nVARIANT_ID=container\n'):
+            release.write_text(identity)
+            self.assertFalse(self.accepted())
+
     def test_xfs_marker_on_ext4_rejected(self):
         self.fstype = 'xfs'
         (self.root/'etc/picasso-install-fstype').write_text('xfs\n')

@@ -14,7 +14,7 @@ import signal
 import sys
 
 SOURCE=Path('/opt/picasso-wifi/wifi-auto-service.py')
-SOURCE_SHA='a5000fef3c7f4641e917dbb206a4993861ccd46eb56b649c7e748630a5b99c96'
+SOURCE_SHA='2a4bde6e352dfe9772e5ee718a668432bbeb440ca643038793df6b44236232cc'
 NAMES=('Chaldea','Chaldea-2.4G')
 
 
@@ -50,7 +50,7 @@ def service_type(base):
         def radio_monitor(self):
             self.identity()
             for cpu in ('6','7'):
-                require(int(Path('/sys/devices/system/cpu/cpufreq/policy'+cpu+'/scaling_max_freq').read_text())==1094400,'Active CPU cap changed')
+                base.read_cpu_cap(cpu, 1094400)  # Permit stricter kernel cooling, never a higher cap.
             for unit in self.record['children']:
                 require(self.text(['systemctl','is-active',unit]).strip()=='active','Radio dependency stopped')
             metadata=link_metadata(self.text(['iw','dev','wlan0','link']))

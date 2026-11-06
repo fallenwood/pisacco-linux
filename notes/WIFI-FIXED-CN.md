@@ -1,5 +1,12 @@
 # 固定 CN 国家码 / Fixed CN Country Policy
 
+后续 / Later: 2026-11-06 出现旧 NV 生命周期拒启；新授权的普通副本恢复、CPU 提前
+降温和新原生证明见[局域网恢复与提前降温](NETWORK-THERMAL-REPAIR.md)。本页是
+此前在线验收快照，不是实时状态。 / A later old-NV-lifecycle refusal and newly
+authorized ordinary-copy recovery, early CPU cooling and fresh native proof are
+in [LAN recovery and early cooling](NETWORK-THERMAL-REPAIR.md). This page retains
+the earlier online acceptance snapshot, not live state.
+
 ## 中文
 
 ### 2026-11-02：固定 CN 已部署，2.4 GHz 持续运行

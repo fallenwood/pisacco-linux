@@ -55,8 +55,16 @@ def bind_kernel_version(text, release):
     return text.replace(marker, marker + 'ConditionKernelVersion=' + release + '\n', 1)
 
 
+def bind_early_cooling(text):
+    marker = '[Unit]\n'
+    if text.count(marker) != 1 or 'Requires=picasso-thermal-policy.service\n' in text:
+        raise ValueError('Unexpected early cooling dependency layout')
+    return text.replace(marker, marker + 'Requires=picasso-thermal-policy.service\n'
+                        'After=picasso-thermal-policy.service\n', 1)
+
+
 def bind_screen_cooldown(text):
-    guard = "        require(max(temperatures().values())<40000,'Start below 40C')\n"
+    guard = "        require(below_temperature_limit(temperatures(),STARTUP_LIMIT_MC),'Start below 65C')\n"
     ready = "        data['console']=console.console_info()\n"
     if text.count(guard) != 1 or text.count(ready) != 1:
         raise ValueError('Unexpected screen pre-arming layout')
@@ -197,6 +205,9 @@ def main():
     script('power-hold-policy.py', 'picasso-power-button')
     script('power-button-daemon.py', 'picasso-power-button')
     script('wait-for-cool.py', 'picasso-startup')
+    script('thermal-policy.py', 'picasso-thermal')
+    write(Path('/etc/systemd/system/picasso-thermal-policy.service'),
+          (ROOT / 'tools/picasso-thermal-policy.service').read_bytes())
     write(prefix / 'kernel-candidate-activation.py',
           (ROOT / 'tools/kernel-candidate-activation.py').read_bytes())
     for name, metadata in extras['artifacts'].items():
@@ -283,6 +294,8 @@ def main():
                             str(prefix / 'kernel-candidate-activation.py') + ' --feature ' + feature + '\n', 1)
         body = re.sub(r'^(RuntimeDirectory|StateDirectory)=(picasso-(?:screen|power-button|wifi))$',
                       r'\1=\2-7.3.1', body, flags=re.M)
+        if feature in ('screen', 'wifi'):
+            body = bind_early_cooling(body)
         if feature == 'screen':
             body = body.replace('TimeoutStartSec=30s', 'TimeoutStartSec=330s')
         write(unit_dir / ('picasso-' + name + '-7.3.1.service'), body)

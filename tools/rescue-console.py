@@ -84,8 +84,10 @@ class Console:
         token = uuid.uuid4().hex.encode()
         begin, end = b'__PI_BEGIN_'+token+b'__', b'__PI_END_'+token+b'__'
         wire = b"printf '\\n"+begin+b"\\n'; "+command.encode()+b"; printf '\\n"+end+b"\\n'\r"
-        if len(wire) > 3500:
-            raise ValueError('Command too long for conservative serial line limit')
+        # Rescue ash can truncate a >2 KiB edited input line, including the end
+        # marker. Leave margin and transfer larger payloads in verified chunks.
+        if len(wire) > 1800:
+            raise ValueError('Command too long for conservative serial line limit; use chunks')
         self.send(wire)
         deadline, raw = time.monotonic()+timeout, bytearray()
         try:

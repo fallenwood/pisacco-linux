@@ -22,14 +22,21 @@ POLICY = load('wifi-fallback-policy')
 
 class CooldownTests(unittest.TestCase):
     def test_hot_sample_resets_three_consecutive_cool_samples(self):
-        samples = iter((39000, 39000, 40000, 39000, 39000, 39000))
+        samples = iter((64999, 64999, 65000, 64999, 64999, 64999))
         with patch.object(COOL, 'temperatures', side_effect=lambda: {'cpu': next(samples)}), \
                 patch.object(COOL.time, 'sleep') as sleep:
             COOL.wait_for_cool()
         self.assertEqual(sleep.call_count, 5)
 
+    def test_65C_startup_limit_allows_warm_but_below_limit_samples(self):
+        self.assertEqual(COOL.STARTUP_LIMIT_MC, 65000)
+        with patch.object(COOL, 'temperatures', return_value={'cpu': 60000}), \
+                patch.object(COOL.time, 'sleep') as sleep:
+            COOL.wait_for_cool()
+        self.assertEqual(sleep.call_count, 2)
+
     def test_hot_boot_times_out_instead_of_arming_hardware(self):
-        with patch.object(COOL, 'temperatures', return_value={'cpu': 51000}), \
+        with patch.object(COOL, 'temperatures', return_value={'cpu': 65000}), \
                 patch.object(COOL.time, 'monotonic', side_effect=(0, 0, 300)), \
                 patch.object(COOL.time, 'sleep'):
             with self.assertRaises(TimeoutError):

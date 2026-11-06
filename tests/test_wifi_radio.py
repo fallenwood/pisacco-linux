@@ -30,7 +30,9 @@ class WifiRadioTests(unittest.TestCase):
     if args[-1]=='power_save':return 'Power save: off\n'
     if args[-2:]==['station','dump']:return ''
     raise AssertionError(args)
-  return R.service_type(SimpleNamespace(Service=Base))()
+  spec=importlib.util.spec_from_file_location('cpu_cap_worker',ROOT/'tools/wifi-auto-service.py')
+  worker=importlib.util.module_from_spec(spec);spec.loader.exec_module(worker)
+  return R.service_type(SimpleNamespace(Service=Base,read_cpu_cap=worker.read_cpu_cap))()
  def test_no_association_is_valid_not_an_error(self):
   self.assertIsNone(R.link_metadata('Not connected.\n')['ssid'])
  def test_only_approved_ssids_observed(self):
@@ -57,6 +59,16 @@ class WifiRadioTests(unittest.TestCase):
   o=self.fake_radio('trusted')
   with patch.object(Path,'read_text',return_value='1094400'):
    with self.assertRaises(RuntimeError):o.radio_monitor()
+ def test_native_thermal_qos_lower_cap_keeps_radio_but_higher_cap_fails(self):
+  o=self.fake_radio()
+  def read(p):
+   if p.name=='scaling_available_frequencies':return '652800 806400 940800 1094400 1478400'
+   if p.name=='scaling_min_freq':return '652800' if p.parent.name=='policy6' else '806400'
+   return '940800' if p.parent.name=='policy6' else '806400'
+  with patch.object(Path,'read_text',read):o.radio_monitor()
+  self.assertEqual(o.record['status'],'radio_up_idle')
+  def high(p):return '1478400' if p.name=='scaling_max_freq' else read(p)
+  with patch.object(Path,'read_text',high),self.assertRaises(RuntimeError):o.radio_monitor()
  def test_native_guards_and_stop_cleanup_remain_pinned(self):
   self.assertEqual(hashlib.sha256((ROOT/'tools/wifi-auto-service.py').read_bytes()).hexdigest(),R.SOURCE_SHA)
   text=(ROOT/'tools/picasso-wifi-radio.service').read_text()

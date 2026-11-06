@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 SOURCE=Path('/opt/picasso-wifi/wifi-auto-service.py')
-SOURCE_SHA='a5000fef3c7f4641e917dbb206a4993861ccd46eb56b649c7e748630a5b99c96'
+SOURCE_SHA='2a4bde6e352dfe9772e5ee718a668432bbeb440ca643038793df6b44236232cc'
 
 
 def require(ok,message):

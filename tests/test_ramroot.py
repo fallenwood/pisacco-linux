@@ -21,6 +21,12 @@ class SerialMarkers(unittest.TestCase):
     def test_partial_capture_rejected(self):
         self.assertIsNone(console.extract(b'\nBEGIN\npartial', b'BEGIN', b'END'))
 
+    def test_large_line_refused_before_any_serial_write(self):
+        instance = console.Console.__new__(console.Console)
+        instance.send = lambda data: self.fail('Oversized command reached the device')
+        with self.assertRaisesRegex(ValueError, 'use chunks'):
+            instance.command('x' * 1800)
+
 
 class RamRootGuard(unittest.TestCase):
     def setUp(self):
@@ -60,6 +66,10 @@ class RamRootGuard(unittest.TestCase):
 
     def test_native_initialization_required(self):
         (self.root/'etc/picasso-native-init.done').unlink()
+        self.assertFalse(self.accepted())
+
+    def test_fedora45_not_implicitly_accepted_as_ramroot(self):
+        (self.root/'etc/os-release').write_text('ID=fedora\nVERSION_ID=45\nVARIANT_ID=server\n')
         self.assertFalse(self.accepted())
 
     def test_server_release_required(self):
